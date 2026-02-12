@@ -40,7 +40,7 @@
   #:use-module (gnu packages version-control)
   #:use-module (gnu packages web)
   #:use-module (gnu packages zig)
-  #:export (bun-bootstrap
+  #:export (bun-stage0
             bun-from-source
             opencode
             bun-from-source-local
@@ -68,7 +68,16 @@
               "bun-offline-seed"
               #:recursive? #t))
 
-(define webkit-prebuilt
+(define webkit-prebuilt-1.1.16
+  (origin
+    (method url-fetch)
+    (uri
+     "https://github.com/oven-sh/WebKit/releases/download/autobuild-64d04ec1a65d91326c5f2298b9c7d05b56125252/bun-webkit-linux-amd64.tar.gz")
+    (sha256
+     (base32
+      "01r1lbz1bl54wfs4wj8if7zzlx2603s75188yxzizq29iyvd0iky"))))
+
+(define webkit-prebuilt-1.3.8
   (origin
     (method url-fetch)
     (uri
@@ -77,31 +86,113 @@
      (base32
       "1h0ajrpn3ybchggri5ypgd17mk5d4s1a6bbpn1cy14i940922y03"))))
 
-(define-public bun-bootstrap
+(define-public bun-stage0
   (package
-    (name "bun-bootstrap")
-    (version "1.3.8")
+    (name "bun-stage0")
+    (version "1.1.16")
     (source
      (origin
        (method url-fetch)
        (uri (string-append
-             "https://github.com/oven-sh/bun/releases/download/bun-v"
-             version "/bun-linux-x64.zip"))
+             "https://github.com/oven-sh/bun/archive/refs/tags/bun-v"
+             version ".tar.gz"))
        (sha256
         (base32
-         "1wd34srfq5jywkga220hvzvcpvas4acd9alq8ak7dni20xzv28h3"))))
+         "1ddacbx5nlr2qqvwhzpcv7jsk15agfd16bc2hl82slqc4z5x8ych"))
+       (modules '((guix build utils)))
+       (snippet
+        '(begin
+           ;; Keep source unpack size reasonable in tmpfs-backed builds.
+           (delete-file-recursively "packages/bun-uws/fuzzing/seed-corpus")
+           #t))))
     (build-system gnu-build-system)
     (arguments
      (list
       #:tests? #f
-      #:validate-runpath? #f
       #:phases
       #~(modify-phases %standard-phases
-          (replace 'unpack
-            (lambda* (#:key source #:allow-other-keys)
-              (invoke "unzip" source)))
           (delete 'configure)
-          (delete 'build)
+          (add-before 'build 'prepare-webkit
+            (lambda* (#:key inputs #:allow-other-keys)
+              (invoke "tar" "xf" (assoc-ref inputs "webkit-prebuilt"))
+              (setenv "JSC_BASE_DIR" (string-append (getcwd) "/bun-webkit"))
+              ;; Keep stage0 objects small enough for tmpfs-backed builders.
+              (substitute* "Makefile"
+                (("EMIT_LLVM_FOR_RELEASE=-emit-llvm -flto=\\\"full\\\"")
+                 "EMIT_LLVM_FOR_RELEASE=")
+                (("OPTIMIZATION_LEVEL=-O3 \\$\\(MARCH_NATIVE\\)")
+                 "OPTIMIZATION_LEVEL=-O2 $(MARCH_NATIVE)"))
+              ;; Release tarballs do not ship generated codegen outputs.
+              ;; Stage0 only needs the enum header used by the C++ build.
+              (invoke "python3" "-c"
+                      (string-append
+                      "import os, re\n"
+                      "from pathlib import Path\n"
+                      "\n"
+                      "roots = ['bun', 'node', 'thirdparty', 'internal']\n"
+                      "base = Path('src/js')\n"
+                      "module_list = []\n"
+                      "for root in roots:\n"
+                      "    for p in (base / root).rglob('*'):\n"
+                      "        if not p.is_file():\n"
+                      "            continue\n"
+                      "        rel = p.relative_to(base).as_posix()\n"
+                      "        if rel.endswith('.js') or (rel.endswith('.ts') and not rel.endswith('.d.ts')):\n"
+                      "            module_list.append(rel)\n"
+                      "module_list = sorted(module_list)\n"
+                      "module_list.append('internal-for-testing.ts')\n"
+                      "\n"
+                      "def cap(x):\n"
+                      "    return x[:1].upper() + x[1:]\n"
+                      "\n"
+                      "def id_to_enum_name(module_id):\n"
+                      "    module_id = re.sub(r'\\.[mc]?[tj]s$', '', module_id)\n"
+                      "    parts = re.sub(r'[^a-zA-Z0-9]+', ' ', module_id).split()\n"
+                      "    out = []\n"
+                      "    for p in parts:\n"
+                      "        if p in {'jsc', 'ffi', 'vm', 'tls', 'os', 'ws', 'fs', 'dns'}:\n"
+                      "            out.append(p.upper())\n"
+                      "        else:\n"
+                      "            out.append(cap(p))\n"
+                      "    return ''.join(out)\n"
+                      "\n"
+                      "native_module_header = Path('src/bun.js/modules/_NativeModule.h').read_text()\n"
+                      "native_enum_to_id = []\n"
+                      "for n, match in enumerate(re.finditer(r'macro\\((.*?),(.*?)\\)', native_module_header, re.S)):\n"
+                      "    native_enum_to_id.append((match.group(2).strip(), n))\n"
+                      "\n"
+                      "lines = [\n"
+                      "    'enum SyntheticModuleType : uint32_t {',\n"
+                      "    '    JavaScript = 0,',\n"
+                      "    '    PackageJSONTypeModule = 1,',\n"
+                      "    '    Wasm = 2,',\n"
+                      "    '    ObjectModule = 3,',\n"
+                      "    '    File = 4,',\n"
+                      "    '    ESM = 5,',\n"
+                      "    '    JSONForObjectLoader = 6,',\n"
+                      "    '    ExportsObject = 7,',\n"
+                      "    '',\n"
+                      "    '    // Built in modules are loaded through InternalModuleRegistry by numerical ID.',\n"
+                      "    '    // In this enum are represented as `(1 << 9) & id`',\n"
+                      "    '    InternalModuleRegistryFlag = 1 << 9,',\n"
+                      "]\n"
+                      "for idx, module_id in enumerate(module_list):\n"
+                      "    lines.append(f'    {id_to_enum_name(module_id)} = {(1 << 9) | idx},')\n"
+                      "lines.extend([\n"
+                      "    '    ',\n"
+                      "    '    // Native modules run through the same system, but with different underlying initializers.',\n"
+                      "    '    // They also have bit 10 set to differentiate them from JS builtins.',\n"
+                      "    '    NativeModuleFlag = (1 << 10) | (1 << 9),',\n"
+                      "])\n"
+                      "for enum_name, idx in native_enum_to_id:\n"
+                      "    lines.append(f'    {enum_name} = {(1 << 10) | idx},')\n"
+                      "lines.extend(['};', ''])\n"
+                      "Path('src/bun.js/bindings/SyntheticModuleType.h').write_text('\\n'.join(lines))"))))
+          (replace 'build
+            (lambda _
+              (setenv "HOME" (getcwd))
+              (setenv "BUN_DEBUG_QUIET_LOGS" "1")
+              (invoke "make" "release-only" "CPUS=1")))
           (replace 'install
             (lambda* (#:key inputs outputs #:allow-other-keys)
               (let* ((out (assoc-ref outputs "out"))
@@ -110,20 +201,42 @@
                      (interpreter
                       (search-input-file inputs "/lib/ld-linux-x86-64.so.2")))
                 (mkdir-p bin)
-                (install-file "bun-linux-x64/bun" bin)
+                (install-file "packages/bun-linux-x64/bun" bin)
                 (chmod bun #o755)
                 (invoke "patchelf" "--set-interpreter" interpreter bun)
+                (invoke "patchelf" "--remove-needed"
+                        "ld-linux-x86-64.so.2"
+                        bun)
                 (symlink "bun" (string-append bin "/bunx"))))))))
     (native-inputs
-     (list unzip patchelf))
+     (list (list "webkit-prebuilt" webkit-prebuilt-1.1.16)
+           (list "cmake" cmake)
+           (list "ninja" ninja)
+           (list "pkg-config" pkg-config)
+           (list "clang" clang-16)
+           (list "lld" lld-16)
+           (list "llvm" llvm-16)
+           (list "zig" zig-0.11)
+           (list "rust" rust)
+           (list "cargo" rust "cargo")
+           (list "go" go)
+           (list "ruby" ruby)
+           (list "python" python)
+           (list "node" node)
+           (list "perl" perl)
+           (list "git" git)
+           (list "patchelf" patchelf)
+           (list "which" which)
+           (list "esbuild" esbuild)))
     (inputs
      (list glibc))
     (supported-systems '("x86_64-linux"))
     (home-page "https://bun.sh")
-    (synopsis "Temporary bootstrap Bun binary")
+    (synopsis "Stage0 Bun built from source")
     (description
-     "This package provides a temporary bootstrap Bun binary for building a
-fully source-built Bun package.")
+     "This package bootstraps Bun from source using the older Makefile-based
+build system from Bun 1.1.16.  It is intended as a source-built stage0 for
+newer Bun releases.")
     (license license:expat)))
 
 (define-public bun-from-source
@@ -256,7 +369,7 @@ fully source-built Bun package.")
                      (webkit (string-append cache "/webkit-9a2cc42ae1bf693a"))
                      (extracted (string-append cache "/bun-webkit")))
                 (mkdir-p cache)
-                (invoke "tar" "xf" #$webkit-prebuilt "-C" cache)
+                (invoke "tar" "xf" #$webkit-prebuilt-1.3.8 "-C" cache)
                 (when (file-exists? webkit)
                   (delete-file-recursively webkit))
                 (rename-file extracted webkit)
@@ -301,7 +414,7 @@ fully source-built Bun package.")
      (list glibc))
     (native-inputs
      (list (list "offline-seed" offline-seed)
-           (list "bun-bootstrap" bun-bootstrap)
+           (list "bun-stage0" bun-stage0)
            (list "cmake" cmake)
            (list "ninja" ninja)
            (list "pkg-config" pkg-config)

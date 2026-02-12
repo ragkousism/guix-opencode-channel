@@ -1,16 +1,29 @@
-# Guix Opencode Channel (local)
+# guix-opencode-channel
 
-Local channel for iterative Bun/opencode packaging work.
+Experimental channel for packaging Bun and opencode in Guix with a
+source-build bootstrap chain.
 
-## Use with -L
+## Quick commands
 
 ```bash
-guix build -L /home/manolis/repos/guix-opencode-channel \
-  -e '(@@ (gnu packages opencode) opencode)'
+guix build -L /home/manolis/repos/guix-opencode-channel bun-stage0 --dry-run
+guix build -L /home/manolis/repos/guix-opencode-channel bun-from-source --dry-run
+guix build -L /home/manolis/repos/guix-opencode-channel opencode --dry-run
 ```
 
-## Optional path overrides
+## Main module
+
+- `gnu/packages/opencode.scm`
+- exports: `bun-stage0`, `bun-from-source`, `opencode`
+
+## Local path overrides
 
 - `BUN_OFFLINE_SEED_DIR` (default `/var/tmp/bun-offline-seed`)
 - `OPENCODE_SOURCE_DIR` (default `/home/manolis/repos/opencode`)
 - `OPENCODE_MODELS_DEV_API_JSON` (default `/tmp/models-dev-api.json`)
+
+## Session log
+
+Detailed status, blockers, and continuation steps are tracked in:
+
+- `doc/bun-opencode-packaging-plan.md`
