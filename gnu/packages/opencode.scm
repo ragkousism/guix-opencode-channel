@@ -59,6 +59,30 @@
 (define (path-or-default env-var default)
   (or (getenv env-var) default))
 
+(define (local-directory-or-empty path name)
+  (if (file-exists? path)
+      (local-file path
+                  name
+                  #:recursive? #t)
+      (computed-file name
+                     #~(begin
+                         (mkdir #$output)))))
+
+(define (local-git-checkout-or-empty path name)
+  (if (file-exists? path)
+      (local-file path
+                  name
+                  #:recursive? #t
+                  #:select? (git-predicate path))
+      (computed-file name
+                     #~(begin
+                         (mkdir #$output)))))
+
+(define (local-json-or-empty-object path name)
+  (if (file-exists? path)
+      (local-file path name)
+      (plain-file name "{}\n")))
+
 (define %bun-offline-seed-directory
   (path-or-default "BUN_OFFLINE_SEED_DIR" "/var/tmp/bun-offline-seed"))
 
@@ -95,7 +119,7 @@
      (base32
       "1h0ajrpn3ybchggri5ypgd17mk5d4s1a6bbpn1cy14i940922y03"))))
 
-(define lezer-common-tarball
+(define lezer-common-source
   (origin
     (method url-fetch)
     (uri "https://registry.npmjs.org/@lezer/common/-/common-1.3.0.tgz")
@@ -103,7 +127,7 @@
      (base32
       "0nnf4m4sr4ldx8cpz1yvgrcip3gy5ryqdlgma5hqgpijl394g7gk"))))
 
-(define lezer-cpp-tarball
+(define lezer-cpp-source
   (origin
     (method url-fetch)
     (uri "https://registry.npmjs.org/@lezer/cpp/-/cpp-1.1.3.tgz")
@@ -111,7 +135,7 @@
      (base32
       "02sci68a1a082qgih74v96nwq9chqvvbxcb5lf74bs61b6y76df0"))))
 
-(define lezer-highlight-tarball
+(define lezer-highlight-source
   (origin
     (method url-fetch)
     (uri "https://registry.npmjs.org/@lezer/highlight/-/highlight-1.2.3.tgz")
@@ -119,7 +143,7 @@
      (base32
       "1vvlnvq2dys2b0xpvrqnybbc86ypj3vss0pxvjkyywv4p4qaamsj"))))
 
-(define lezer-lr-tarball
+(define lezer-lr-source
   (origin
     (method url-fetch)
     (uri "https://registry.npmjs.org/@lezer/lr/-/lr-1.4.3.tgz")
@@ -127,7 +151,7 @@
      (base32
       "07x0c4dyhj7s63k6d6a17czn1b7gqrc920xdk5sf0jgp2yhnzd92"))))
 
-(define node-v24.3.0-headers-tarball
+(define node-v24.3.0-headers-source
   (origin
     (method url-fetch)
     (uri "https://nodejs.org/dist/v24.3.0/node-v24.3.0-headers.tar.gz")
@@ -1684,32 +1708,32 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
                         bun)
                 (symlink "bun" (string-append bin "/bunx"))))))))
     (native-inputs
-     (list (list "webkit-prebuilt" webkit-prebuilt-stage0)
-           (list "cmake" cmake)
-           (list "ninja" ninja)
-           (list "pkg-config" pkg-config)
-           (list "mimalloc" mimalloc)
-           (list "openssl" openssl)
-           (list "libarchive" libarchive)
-           (list "zlib" zlib)
-           (list "zstd" zstd "lib")
-           (list "c-ares" c-ares)
-           (list "gcc-lib" gcc "lib")
-           (list "clang" clang-16)
-           (list "lld" lld-16)
-           (list "llvm" llvm-16)
-           (list "zig" zig-0.11)
-           (list "rust" rust)
-           (list "cargo" rust "cargo")
-           (list "go" go)
-           (list "ruby" ruby)
-           (list "python" python)
-           (list "node" node)
-           (list "perl" perl)
-           (list "git" git)
-           (list "patchelf" patchelf)
-           (list "which" which)
-           (list "esbuild" esbuild)))
+     `(("webkit-prebuilt" ,webkit-prebuilt-stage0)
+       ("cmake-minimal" ,cmake-minimal)
+       ("ninja" ,ninja)
+       ("pkg-config" ,pkg-config)
+       ("mimalloc" ,mimalloc)
+       ("openssl" ,openssl)
+       ("libarchive" ,libarchive)
+       ("zlib" ,zlib)
+       ("zstd" ,zstd "lib")
+       ("c-ares" ,c-ares)
+       ("gcc-lib" ,gcc "lib")
+       ("clang" ,clang-16)
+       ("lld" ,lld-16)
+       ("llvm" ,llvm-16)
+       ("zig" ,zig-0.11)
+       ("rust" ,rust)
+       ("rust:cargo" ,rust "cargo")
+       ("go" ,go)
+       ("ruby" ,ruby)
+       ("python" ,python)
+       ("node" ,node)
+       ("perl" ,perl)
+       ("git" ,git)
+       ("patchelf" ,patchelf)
+       ("which" ,which)
+       ("esbuild" ,esbuild)))
     (inputs
      (list glibc))
     (supported-systems '("x86_64-linux"))
@@ -2139,7 +2163,7 @@ newer Bun releases.")
               ;; bun-stage0 currently compiles but does not execute JS reliably.
               ;; Prefer a known-good bootstrap Bun for build-time codegen.
               (setenv "PATH"
-                      (string-append (assoc-ref inputs "bun-bootstrap")
+                      (string-append (assoc-ref inputs "bun-bootstrap-binary")
                                      "/bin:"
                                      (getenv "PATH")))
               ;; Use full local parallelism for CMake/Ninja.
@@ -2167,32 +2191,32 @@ newer Bun releases.")
     (inputs
      (list glibc))
     (native-inputs
-     (list (list "offline-seed" offline-seed)
-           (list "bun-bootstrap" bun-bootstrap-binary-1.3.8)
-           (list "bun-stage0" bun-stage0)
-           (list "lezer-common" lezer-common-tarball)
-           (list "lezer-cpp" lezer-cpp-tarball)
-           (list "lezer-highlight" lezer-highlight-tarball)
-           (list "lezer-lr" lezer-lr-tarball)
-           (list "node-headers" node-v24.3.0-headers-tarball)
-           (list "cmake" cmake)
-           (list "ninja" ninja)
-           (list "pkg-config" pkg-config)
-           (list "clang" clang-19)
-           (list "lld" lld-19)
-           (list "llvm" llvm-19)
-           (list "zig" zig-0.14)
-           (list "rust" rust)
-           (list "cargo" rust "cargo")
-           (list "go" go)
-           (list "ruby" ruby)
-           (list "python" python)
-           (list "node" node)
-           (list "perl" perl)
-           (list "git" git)
-           (list "patchelf" patchelf)
-           (list "which" which)
-           (list "esbuild" esbuild)))
+     `(("offline-seed" ,offline-seed)
+       ("bun-bootstrap-binary" ,bun-bootstrap-binary-1.3.8)
+       ("bun-stage0" ,bun-stage0)
+       ("lezer-common" ,lezer-common-source)
+       ("lezer-cpp" ,lezer-cpp-source)
+       ("lezer-highlight" ,lezer-highlight-source)
+       ("lezer-lr" ,lezer-lr-source)
+       ("node-headers" ,node-v24.3.0-headers-source)
+       ("cmake-minimal" ,cmake-minimal)
+       ("ninja" ,ninja)
+       ("pkg-config" ,pkg-config)
+       ("clang" ,clang-19)
+       ("lld" ,lld-19)
+       ("llvm" ,llvm-19)
+       ("zig" ,zig-0.14)
+       ("rust" ,rust)
+       ("rust:cargo" ,rust "cargo")
+       ("go" ,go)
+       ("ruby" ,ruby)
+       ("python" ,python)
+       ("node" ,node)
+       ("perl" ,perl)
+       ("git" ,git)
+       ("patchelf" ,patchelf)
+       ("which" ,which)
+       ("esbuild" ,esbuild)))
     (supported-systems '("x86_64-linux"))
     (home-page "https://bun.sh")
     (synopsis "Prototype package to build Bun from source")
@@ -2203,79 +2227,67 @@ newer Bun releases.")
 (define-public bun-from-source-local bun-from-source)
 
 (define opencode-source
-  (local-file %opencode-source-directory
-              "opencode-source"
-              #:recursive? #t
-              #:select? (git-predicate %opencode-source-directory)))
+  (local-git-checkout-or-empty %opencode-source-directory
+                               "opencode-source"))
 
 (define opencode-node-modules
-  (local-file (string-append %opencode-source-directory "/.guix-node-modules")
-              "opencode-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/.guix-node-modules")
+                            "opencode-node-modules"))
 
 (define models-dev-api-json
-  (local-file %opencode-models-dev-api-json
-              "models-dev-api.json"))
+  (local-json-or-empty-object %opencode-models-dev-api-json
+                              "models-dev-api.json"))
 
 (define app-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/app/node_modules")
-              "app-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/app/node_modules")
+                            "app-node-modules"))
 
 (define enterprise-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/enterprise/node_modules")
-              "enterprise-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/enterprise/node_modules")
+                            "enterprise-node-modules"))
 
 (define function-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/function/node_modules")
-              "function-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/function/node_modules")
+                            "function-node-modules"))
 
 (define plugin-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/plugin/node_modules")
-              "plugin-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/plugin/node_modules")
+                            "plugin-node-modules"))
 
 (define script-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/script/node_modules")
-              "script-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/script/node_modules")
+                            "script-node-modules"))
 
 (define sdk-js-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/sdk/js/node_modules")
-              "sdk-js-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/sdk/js/node_modules")
+                            "sdk-js-node-modules"))
 
 (define slack-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/slack/node_modules")
-              "slack-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/slack/node_modules")
+                            "slack-node-modules"))
 
 (define ui-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/ui/node_modules")
-              "ui-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/ui/node_modules")
+                            "ui-node-modules"))
 
 (define util-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/util/node_modules")
-              "util-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/util/node_modules")
+                            "util-node-modules"))
 
 (define web-node-modules
-  (local-file (string-append %opencode-source-directory
-                             "/packages/web/node_modules")
-              "web-node-modules"
-              #:recursive? #t))
+  (local-directory-or-empty (string-append %opencode-source-directory
+                                           "/packages/web/node_modules")
+                            "web-node-modules"))
 
 (define-public opencode
   (package
@@ -2481,19 +2493,19 @@ fi")
           ;; the compiled executable back into plain `bun`.
           (delete 'strip))))
     (native-inputs
-     (list (list "bun" bun-from-source)
-           (list "node-modules" opencode-node-modules)
-           (list "models-dev-api" models-dev-api-json)
-           (list "app-node-modules" app-node-modules)
-           (list "enterprise-node-modules" enterprise-node-modules)
-           (list "function-node-modules" function-node-modules)
-           (list "plugin-node-modules" plugin-node-modules)
-           (list "script-node-modules" script-node-modules)
-           (list "sdk-js-node-modules" sdk-js-node-modules)
-           (list "slack-node-modules" slack-node-modules)
-           (list "ui-node-modules" ui-node-modules)
-           (list "util-node-modules" util-node-modules)
-           (list "web-node-modules" web-node-modules)))
+     `(("bun-from-source" ,bun-from-source)
+       ("node-modules" ,opencode-node-modules)
+       ("models-dev-api" ,models-dev-api-json)
+       ("app-node-modules" ,app-node-modules)
+       ("enterprise-node-modules" ,enterprise-node-modules)
+       ("function-node-modules" ,function-node-modules)
+       ("plugin-node-modules" ,plugin-node-modules)
+       ("script-node-modules" ,script-node-modules)
+       ("sdk-js-node-modules" ,sdk-js-node-modules)
+       ("slack-node-modules" ,slack-node-modules)
+       ("ui-node-modules" ,ui-node-modules)
+       ("util-node-modules" ,util-node-modules)
+       ("web-node-modules" ,web-node-modules)))
     (supported-systems '("x86_64-linux"))
     (home-page "https://opencode.ai")
     (synopsis "opencode package built with Bun")
