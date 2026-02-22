@@ -18,6 +18,7 @@
 
 (define-module (gnu packages opencode)
   #:use-module ((guix licenses) #:prefix license:)
+  #:use-module (guix build-system bun)
   #:use-module (guix build-system gnu)
   #:use-module (guix download)
   #:use-module (guix gexp)
@@ -47,6 +48,7 @@
   #:use-module (gnu packages zig)
   #:export (bun-stage0
             bun-from-source
+            bun-build-system-smoke
             opencode
             bun-from-source-local
             opencode-local))
@@ -234,6 +236,15 @@ running Bun's TypeScript code-generation scripts during source builds.")
     (arguments
      (list
       #:tests? #f
+      #:modules '((guix build gnu-build-system)
+                  (guix build utils)
+                  (guix build bun-build-system))
+      #:imported-modules `(,@%default-gnu-imported-modules
+                           (json)
+                           (json builder)
+                           (json parser)
+                           (json record)
+                           (guix build bun-build-system))
       #:phases
       #~(modify-phases %standard-phases
           (delete 'configure)
@@ -1760,6 +1771,15 @@ newer Bun releases.")
     (arguments
      (list
       #:tests? #f
+      #:modules '((guix build gnu-build-system)
+                  (guix build utils)
+                  (guix build bun-build-system))
+      #:imported-modules `(,@%default-gnu-imported-modules
+                           (json)
+                           (json builder)
+                           (json parser)
+                           (json record)
+                           (guix build bun-build-system))
       #:phases
       #~(modify-phases %standard-phases
           (delete 'configure)
@@ -2226,6 +2246,39 @@ newer Bun releases.")
 ;; Backward-compatibility alias.
 (define-public bun-from-source-local bun-from-source)
 
+(define bun-build-system-smoke-source
+  (computed-file
+   "bun-build-system-smoke-source"
+   #~(begin
+       (mkdir #$output)
+       (mkdir (string-append #$output "/src"))
+       (call-with-output-file (string-append #$output "/src/hello.txt")
+         (lambda (port)
+           (display "hello from bun-build-system\n" port)))
+       (call-with-output-file (string-append #$output "/package.json")
+         (lambda (port)
+           (display
+            "{\n  \"name\": \"bun-build-system-smoke\",\n  \"version\": \"0.0.1\",\n  \"scripts\": {\n    \"build\": \"mkdir -p dist && cp src/hello.txt dist/hello.txt\",\n    \"test\": \"test -f dist/hello.txt\"\n  }\n}\n"
+            port))))))
+
+(define-public bun-build-system-smoke
+  (package
+    (name "bun-build-system-smoke")
+    (version "0.0.1")
+    (source bun-build-system-smoke-source)
+    (build-system bun-build-system)
+    (arguments
+     (list
+      #:bun bun-from-source
+      #:tests? #t))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://bun.sh")
+    (synopsis "Smoke test package for bun-build-system")
+    (description
+     "Minimal package used to verify that bun-build-system can run install,
+build, test, and install phases.")
+    (license license:expat)))
+
 (define opencode-source
   (local-git-checkout-or-empty %opencode-source-directory
                                "opencode-source"))
@@ -2298,6 +2351,15 @@ newer Bun releases.")
     (arguments
      (list
       #:tests? #f
+      #:modules '((guix build gnu-build-system)
+                  (guix build utils)
+                  (guix build bun-build-system))
+      #:imported-modules `(,@%default-gnu-imported-modules
+                           (json)
+                           (json builder)
+                           (json parser)
+                           (json record)
+                           (guix build bun-build-system))
       #:phases
       #~(modify-phases %standard-phases
           (delete 'configure)
@@ -2333,16 +2395,17 @@ newer Bun releases.")
               (mkdir-p "packages/sdk/js")
               (symlink (assoc-ref inputs "sdk-js-node-modules")
                        "packages/sdk/js/node_modules")
-              (for-each
-               (lambda (name)
-                 (let ((target (string-append "packages/" name "/node_modules")))
-                   (when (file-exists? target)
-                     (delete-file-recursively target))
-                   (mkdir-p (string-append "packages/" name))
-                   (symlink (assoc-ref inputs (string-append name "-node-modules"))
-                            target)))
-               '("app" "enterprise" "function" "plugin" "script"
-                 "slack" "ui" "util" "web"))
+              (restore-input-symlink-tree
+               inputs
+               '(("packages/app/node_modules" . "app-node-modules")
+                 ("packages/enterprise/node_modules" . "enterprise-node-modules")
+                 ("packages/function/node_modules" . "function-node-modules")
+                 ("packages/plugin/node_modules" . "plugin-node-modules")
+                 ("packages/script/node_modules" . "script-node-modules")
+                 ("packages/slack/node_modules" . "slack-node-modules")
+                 ("packages/ui/node_modules" . "ui-node-modules")
+                 ("packages/util/node_modules" . "util-node-modules")
+                 ("packages/web/node_modules" . "web-node-modules")))
               ;; Bun's workspace lockfile hoists many deps under
               ;; node_modules/.bun/node_modules. Symlink any missing package
               ;; entries into opencode's package-local node_modules, including
@@ -2465,16 +2528,12 @@ fi")
                 (invoke "bun" "--bun" "./script/build.ts"
                         "--single"
                         "--skip-install")
-                ;; `schema.ts` imports sources using JS `using` declarations.
-                ;; Our bootstrapped Bun currently misses `bun:wrap` `__using`.
-                ;; Keep the build moving with a minimal JSON schema fallback.
-                (unless (zero?
-                         (system* "bun" "--bun" "./script/schema.ts" "schema.json"))
-                  (call-with-output-file "schema.json"
-                    (lambda (port)
-                      (display
-                       "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"type\": \"object\",\n  \"additionalProperties\": true,\n  \"allowComments\": true,\n  \"allowTrailingCommas\": true\n}\n"
-                       port)))))))
+                ;; Generate a full schema with a Bun runtime that exports
+                ;; bun:wrap.__using (required by current opencode sources).
+                (invoke (string-append
+                         (assoc-ref inputs "bun-schema-generator")
+                         "/bin/bun")
+                        "--bun" "./script/schema.ts" "schema.json"))))
           (replace 'install
             (lambda* (#:key outputs #:allow-other-keys)
               (let* ((out (assoc-ref outputs "out"))
@@ -2494,6 +2553,7 @@ fi")
           (delete 'strip))))
     (native-inputs
      `(("bun-from-source" ,bun-from-source)
+       ("bun-schema-generator" ,bun-bootstrap-binary-1.3.8)
        ("node-modules" ,opencode-node-modules)
        ("models-dev-api" ,models-dev-api-json)
        ("app-node-modules" ,app-node-modules)

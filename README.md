@@ -9,12 +9,18 @@ source-build bootstrap chain.
 guix build -L /home/manolis/repos/guix-opencode-channel bun-stage0 --dry-run
 guix build -L /home/manolis/repos/guix-opencode-channel bun-from-source --dry-run
 guix build -L /home/manolis/repos/guix-opencode-channel opencode --dry-run
+guix build -L /home/manolis/repos/guix-opencode-channel bun-build-system-smoke --dry-run
 ```
 
 ## Main module
 
 - `gnu/packages/opencode.scm`
-- exports: `bun-stage0`, `bun-from-source`, `opencode`
+- exports: `bun-stage0`, `bun-from-source`, `bun-build-system-smoke`, `opencode`
+
+## Bun Build System Modules
+
+- `guix/build-system/bun.scm`
+- `guix/build/bun-build-system.scm`
 
 ## Local path overrides
 

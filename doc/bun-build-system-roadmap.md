@@ -1,5 +1,7 @@
 # Bun Build System Roadmap
 
+Last updated: 2026-02-22
+
 ## Goal
 
 Introduce a reusable `bun-build-system` in Guix so Bun-based packages can be
@@ -61,7 +63,7 @@ Exit criteria:
 - `guix pull` can evaluate the channel on machines that do not have
   `/home/manolis/repos/opencode`.
 
-### Phase 1: Bun build-system skeleton
+### Phase 1: Bun build-system skeleton (done in channel)
 
 - Add `guix/build-system/bun.scm` with:
   - `%bun-build-system-modules`
@@ -69,6 +71,8 @@ Exit criteria:
   - `bun-build`
   - `bun-build-system`
 - Add `guix/build/bun-build-system.scm` with initial `%standard-phases`.
+- Add a tiny validation package:
+  - `bun-build-system-smoke` in `gnu/packages/opencode.scm`.
 
 Exit criteria:
 
@@ -121,7 +125,13 @@ Exit criteria:
 
 ## Immediate Next Steps
 
-1. Land the channel-safety fix.
-2. Scaffold `bun-build-system` modules with no-op/default phases.
-3. Add one tiny Bun package using the new build system as a smoke test.
-4. Move one `opencode` preparation step into reusable Bun phase helpers.
+1. Harden Phase 2 behavior:
+   - enforce deterministic/offline `bun install` policy and lockfile mode.
+2. Start Phase 3 extraction:
+   - move one `opencode` workspace restoration step into reusable Bun phase helpers.
+3. Expand API surface for workspace/offline use:
+   - evaluate adding `workspace-root` and related offline parameters used by `opencode`.
+4. Prepare upstreamable patch split:
+   - build-system introduction,
+   - smoke package/demo conversion,
+   - opencode helper extraction follow-ups.

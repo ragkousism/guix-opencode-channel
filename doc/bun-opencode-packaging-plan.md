@@ -1,8 +1,8 @@
 # Bun + opencode Guix Packaging Plan
 
-Last updated: 2026-02-21
+Last updated: 2026-02-22
 Owner: Manolis / Codex session
-Status: Completed initial source-build chain (follow-up cleanup pending for schema generation path)
+Status: Completed initial source-build chain; schema generation fallback removed; bun-build-system skeleton + smoke test added
 
 ## Objective
 Package `opencode` in Guix with a fully source-built Bun chain.
@@ -16,6 +16,10 @@ Package `opencode` in Guix with a fully source-built Bun chain.
 - `bun-stage0` (Bun `1.0.0`, source tarball)
 - `bun-from-source` (Bun `1.3.8`, bootstrapped from `bun-stage0`)
 - `opencode` (built with `bun-from-source`)
+- `bun-build-system-smoke` (minimal package validating new `bun-build-system`)
+- `opencode` schema generation currently runs with `bun-schema-generator`
+  (`bun-bootstrap-binary-1.3.8`) because current `bun-from-source` runtime
+  does not export `bun:wrap.__using`
 
 ## Milestones
 
@@ -28,8 +32,10 @@ Package `opencode` in Guix with a fully source-built Bun chain.
 | M5 | Build `bun-stage0` successfully | DONE | stage0 build now succeeds |
 | M6 | Build `bun-from-source` (`1.3.8`) from stage0 | DONE | latest success: `/gnu/store/84y963hsyb5gi1finyhjx7787hafw28h-bun-from-source-1.3.8` |
 | M7 | Build `opencode` from source-built Bun chain | DONE | latest success: `/gnu/store/2wnbn0jx6m0wifb73sxzmwndfss3pxnk-opencode-1.1.58` |
+| M8 | Replace schema fallback with generated schema in package build | DONE | now generated via `bun-schema-generator`; latest success: `/gnu/store/bd6krmn4a6x5wa9n754df3r0i3cnbs0i-opencode-1.1.58` |
+| M9 | Scaffold reusable `bun-build-system` + smoke package | DONE | added `guix/build-system/bun.scm`, `guix/build/bun-build-system.scm`, and `bun-build-system-smoke` |
 
-## What was done in this session
+## Historical build/debug notes (2026-02-21)
 
 ### Stage0 recipe work (`gnu/packages/opencode.scm`)
 Expanded `bun-stage0` compatibility substitutions for modern WebKit/JSC APIs.
@@ -131,6 +137,8 @@ sudo find /tmp -maxdepth 1 -name 'guix-build-bun-stage0-*' -print0 \
 - After cleanup: `/tmp` back to ~5% usage.
 
 ## Current status
+- This section reflects the late 2026-02-21 state before the 2026-02-22
+  schema-generation and `bun-build-system` updates.
 - `bun-stage0` now compiles far past the earlier `bindings.cpp`/`napi.cpp`/`webcore` blockers.
 - New blocker was observed in:
   - `src/bun.js/bindings/webcore/WebSocket.cpp`
@@ -252,8 +260,9 @@ sudo find /tmp -maxdepth 1 -name 'guix-build-bun-stage0-*' -print0 \
     - `@babel` and `babel-preset-solid` from `node_modules/.bun/node_modules`.
 
 ### opencode blocker progression (latest first)
-- `SyntaxError: Export named '__using' not found in module 'bun:wrap'` during `script/schema.ts`.
-  - treated as non-fatal for packaging: run schema generation opportunistically and fallback to a minimal `schema.json` when Bun lacks `__using`.
+- RESOLVED (2026-02-22): `SyntaxError: Export named '__using' not found in module 'bun:wrap'` during `script/schema.ts`.
+  - packaging now runs schema generation with `bun-schema-generator`
+    (`bun-bootstrap-binary-1.3.8`) and installs the real generated schema.
 - `Object is not a constructor (evaluating 'new _lruCache({ max: 64 })')` while compiling TUI entrypoint.
   - traced to `@babel/helper-compilation-targets` assuming `require("lru-cache")` returns a constructor.
   - fixed by patching helper to use `(_lruCache.LRUCache || _lruCache)` and localizing writable `@babel` tree in build.
@@ -264,8 +273,40 @@ sudo find /tmp -maxdepth 1 -name 'guix-build-bun-stage0-*' -print0 \
 - `Cannot find module '@babel/helper-plugin-utils'` from `@babel/preset-typescript/lib/index.js`.
   - addressed by exposing hoisted Babel deps and revising restore strategy.
 
+## Session updates (2026-02-22)
+
+### Completed milestones since previous checkpoint
+- Added reusable Bun build-system modules:
+  - `guix/build-system/bun.scm`
+  - `guix/build/bun-build-system.scm`
+- Added and validated smoke package:
+  - `bun-build-system-smoke`
+- Replaced `opencode` schema fallback with full schema generation in build:
+  - build now invokes `bun-schema-generator` for `script/schema.ts`
+  - removed minimal JSON fallback write path
+- latest successful `opencode` output after this change:
+  - `/gnu/store/bd6krmn4a6x5wa9n754df3r0i3cnbs0i-opencode-1.1.58`
+- installed schema is full/generated (not fallback):
+  - `/gnu/store/bd6krmn4a6x5wa9n754df3r0i3cnbs0i-opencode-1.1.58/share/opencode/schema.json`
+  - size observed: `259307` bytes
+
+### Key packaging changes merged in `gnu/packages/opencode.scm`
+- `opencode`:
+  - added native input:
+    - `("bun-schema-generator" ,bun-bootstrap-binary-1.3.8)`
+  - changed build phase schema step from tolerant fallback to required generation:
+    - now invokes `${bun-schema-generator}/bin/bun --bun ./script/schema.ts schema.json`
+  - removed `call-with-output-file` minimal fallback JSON path
+- module exports:
+  - added `bun-build-system-smoke` export in channel package module
+
+### Validation run summary
+- `guix build -L . opencode` succeeded with generated schema path.
+- `guix shell -L . opencode -- opencode --help` succeeded.
+- `guix build -L . bun-build-system-smoke` succeeded.
+
 ## Next actions (ordered)
-1. Re-run detached `opencode` build without `--keep-failed` for a clean confirmation:
+1. Re-run detached `opencode` build without `--keep-failed` for a clean archival log of the updated schema path:
 
 ```bash
 setsid bash -lc 'cd /home/manolis/repos/guix-opencode-channel && guix build -c16 -L . opencode > /tmp/opencode-setsid.log 2>&1; echo $? > /tmp/opencode-exit-code' </dev/null &
@@ -277,17 +318,28 @@ setsid bash -lc 'cd /home/manolis/repos/guix-opencode-channel && guix build -c16
 guix shell -L /home/manolis/repos/guix-opencode-channel opencode -- opencode --help
 ```
 
-3. Optional quality follow-up:
-   - replace temporary minimal `schema.json` fallback with true generated schema once Bun `__using` support in this chain is resolved.
+3. Advance `bun-build-system` Phase 2:
+   - harden deterministic/offline install behavior and lockfile handling.
+4. Advance `bun-build-system` Phase 3:
+   - move at least one `opencode` workspace-restore step into reusable Bun phase helpers.
+5. Optional quality follow-up:
+   - remove `bun-schema-generator` once `bun-from-source` runtime supports
+     schema generation (`bun:wrap.__using`) directly.
 
 ## Risks / notes
 - Build logs are large and include many unpack lines; grep/tail filtering is required for fast triage.
 - Detached launch is required; interactive-session termination can stop foreground `guix build`.
 - `--keep-failed` is useful for inspection but can fill `/tmp`; clean stale `/tmp/guix-build-opencode-*` trees periodically.
-- Current package build succeeds even when `script/schema.ts` fails on Bun `__using`; schema is currently a minimal compatibility fallback.
+- `opencode` schema generation now depends on `bun-schema-generator`
+  (`bun-bootstrap-binary-1.3.8`) for `bun:wrap.__using`.
+- This keeps schema quality high but is still a temporary non-source-built
+  component in the `opencode` packaging path.
 
 ## Handoff checklist
 - Open `gnu/packages/opencode.scm`.
-- Re-run detached `opencode` build from channel root (prefer without `--keep-failed`).
-- If improving quality, remove the schema fallback once Bun supports the required `__using` path.
+- Re-run detached `opencode` build from channel root (prefer without `--keep-failed`) and capture `/tmp/opencode-setsid.log`.
+- Verify generated schema is installed (not fallback), e.g. check size/content under:
+  - `/gnu/store/...-opencode-1.1.58/share/opencode/schema.json`
+- Continue Phase 2/3 `bun-build-system` work by extracting one `restore-node-modules` step into generic helpers.
+- If improving source purity, remove `bun-schema-generator` once Bun `__using` is available in `bun-from-source`.
 - Update this document with any post-success cleanup and verification logs.
