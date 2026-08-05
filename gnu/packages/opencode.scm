@@ -256,6 +256,9 @@ running Bun's TypeScript code-generation scripts during source builds.")
     (arguments
      (list
       #:tests? #f
+      ;; Temporary, for diagnosing the JS-execution hang: keep .symtab so
+      ;; the spinning stack can be symbolized.
+      #:strip-binaries? #f
       #:modules '((guix build gnu-build-system)
                   (guix build utils)
                   (guix build bun-build-system))
@@ -1745,8 +1748,13 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
                 (invoke "make" "picohttp")
                 (invoke "make" "uws")
                 (let ((cpus (or (getenv "NIX_BUILD_CORES") "1")))
+                  ;; Temporary, for diagnosing the JS-execution hang: the
+                  ;; `release-only' target strips the binary itself, which
+                  ;; defeats #:strip-binaries? #f.  A command-line variable
+                  ;; overrides the Makefile's own STRIP assignment.
                   (invoke "make" "release-only"
-                          (string-append "CPUS=" cpus))))))
+                          (string-append "CPUS=" cpus)
+                          "STRIP=true")))))
           (replace 'install
             (lambda* (#:key inputs outputs #:allow-other-keys)
               (let* ((out (assoc-ref outputs "out"))
