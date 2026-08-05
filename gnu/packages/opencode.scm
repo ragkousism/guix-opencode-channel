@@ -805,9 +805,41 @@ running Bun's TypeScript code-generation scripts during source builds.")
                 (copy-file "packages/bun-error/bun-error.css"
                            "packages/bun-error/dist/bun-error.css")
 
-                ;; Bun's release tarball does not include generated runtime
-                ;; blobs (`src/*.out.js`).  Provide minimal placeholders so
-                ;; Zig can embed them during bootstrap.
+                ;; Bun's release tarball does not include the generated
+                ;; runtime blobs (`src/*.out.js`).  Build the node and bun
+                ;; variants as Bun's `runtime_js' target does: both bundle
+                ;; the same entry point, which pulls in no external
+                ;; dependencies, and differ only in the appended footer.
+                (invoke esbuild
+                        "--target=esnext"
+                        "--bundle" "src/runtime/index-without-hmr.ts"
+                        "--format=iife"
+                        "--platform=node"
+                        "--global-name=BUN_RUNTIME"
+                        "--minify"
+                        "--external:/bun:*"
+                        "--outfile=src/runtime.node.pre.out.js")
+                (for-each
+                 (lambda (footer output)
+                   (call-with-output-file output
+                     (lambda (out)
+                       (for-each
+                        (lambda (part)
+                          (call-with-input-file part
+                            (lambda (in)
+                              (dump-port in out))
+                            #:binary #t))
+                        (list "src/runtime.node.pre.out.js" footer)))
+                     #:binary #t))
+                 '("src/runtime.footer.node.js"
+                   "src/runtime.footer.bun.js")
+                 '("src/runtime.node.out.js"
+                   "src/runtime.bun.out.js"))
+
+                ;; The remaining blobs reach the `peechy' runtime library
+                ;; through src/fallback.ts and src/runtime/hmr.ts, which is
+                ;; not vendored in the tarball.  Keep placeholders so Zig can
+                ;; embed them during bootstrap.
                 (for-each
                  (lambda (file)
                    (call-with-output-file (string-append "src/" file)
@@ -815,8 +847,6 @@ running Bun's TypeScript code-generation scripts during source builds.")
                        (display "(()=>{})();\n" port))))
                  '("runtime.out.js"
                    "runtime.out.refresh.js"
-                   "runtime.node.out.js"
-                   "runtime.bun.out.js"
                    "fallback.out.js"))
 
                 ;; bun-usockets in Bun 1.0.0 expects older uSockets/BoringSSL
