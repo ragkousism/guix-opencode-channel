@@ -204,10 +204,121 @@ not in a syscall.  (The only other thread sits in a normal
 stripped, `.symtab` is gone and `.dynsym` has only the 147 exported
 `BUN_1.0` symbols, so these offsets cannot be resolved as-is.
 
-### Suggested next step
+### RESOLVED (2026-08-05): stack symbolized — root cause identified
 
-Symbolize that stack — this should identify the loop directly and is much
-cheaper than more hypothesis-guessing:
+The stack was symbolized (see "How to symbolize" below).  The hang is:
+
+```
+#0  WTF::AtomStringImpl::addLiteral(std::span<const unsigned char>)
+#1  WebCore::BunBuiltinNames::BunBuiltinNames(JSC::VM&)
+#2  WebCore::JSVMClientData::JSVMClientData(JSC::VM&)
+#3  WebCore::JSVMClientData::create(JSC::VM*, void*)
+#4  Zig__GlobalObject__create
+#5  ...shimmer...cppFn
+#6  src.bun.js.javascript.VirtualMachine.init
+#7  src.bun_js.Run.boot
+#8  src.cli.run_command.RunCommand.exec
+#9  src.cli.Command.start
+#10 src.main.main
+```
+
+This is JS **VM/global-object construction** — it happens before any user
+JavaScript is loaded or run.  That explains every observation at once:
+`--version`, `--help` and `bun build` never construct a JS global object,
+so they work; `bun run` constructs one, so it hangs.  It also definitively
+clears the runtime blobs (embedded JS, consumed much later) — consistent
+with Stage 1 having no effect.
+
+The loop is in WTF's atom-string table while interning Bun's builtin
+identifier names (`BunBuiltinNames`, ~250 `macro(...)` names in
+`src/js/builtins/BunBuiltinNames.h`, interned via WebKit's
+`INITIALIZE_BUILTIN_NAMES`).
+
+**Root cause: the recipe links Bun 1.0.0 against the wrong WebKit.**
+`bun-stage0` uses
+
+    .../WebKit/releases/download/autobuild-64d04ec1a65d91326c5f2298b9c7d05b56125252/bun-webkit-linux-amd64.tar.gz
+
+but Bun 1.0.0's own CI (`.github/workflows/bun-linux-build.yml` in the
+release tarball, `webkit_url:`) pins
+
+    .../WebKit/releases/download/2023-aug3-5/bun-webkit-linux-amd64-lto.tar.gz
+
+The recipe's own comment admits the mismatch ("Bun 1.0.x expects older
+JavaScriptCore/WTF APIs.  Adapt a few generated headers/helpers to the
+newer WebKit snapshot used in this bootstrap stage").  The ~60
+`substitute*` calls exist purely to bridge that gap.  They made the code
+*compile* against the newer WTF, but compiling is not conforming: the
+runtime behaviour of the atom-string path differs, and it now spins.
+
+### Suggested next step: use the WebKit that Bun 1.0.0 expects
+
+Swap `webkit-prebuilt-stage0` to the `2023-aug3-5`
+`bun-webkit-linux-amd64-lto.tar.gz` release.  Verified downloadable and
+hashed on 2026-08-05, so this is ready to paste in:
+
+```scheme
+(define webkit-prebuilt-stage0
+  (origin
+    (method url-fetch)
+    (uri "https://github.com/oven-sh/WebKit/releases/download/2023-aug3-5/\
+bun-webkit-linux-amd64-lto.tar.gz")
+    (sha256
+     (base32
+      "15xcmxagps6ifl6wmw9fav4yfn9bf4mfwzssnqs2k7qh9zyl8h04"))))
+```
+
+Note the tarball's top-level directory name may differ from the current
+one; the `prepare-webkit` phase untars it and sets `JSC_BASE_DIR` to
+`$(pwd)/bun-webkit`, so check the extracted layout and adjust if needed.
+A non-LTO `bun-webkit-linux-amd64.tar.gz` also exists at the same tag if
+the LTO build causes trouble.
+
+Expect this to *also* let most of the ~60
+compatibility substitutions be deleted, since they only exist to bridge to
+the newer snapshot.  Note Guix's `substitute*` does not error when a
+pattern fails to match, so stale substitutions will silently become
+no-ops — they should be removed deliberately, not left to rot, and any
+that still match must be re-checked against the older headers.
+
+Caveats worth stating plainly:
+
+- This does not fix the upstream-policy problem: it is still a prebuilt
+  binary blob, which is why this whole chain stays channel-only.
+- It is a large change with a ~40 min build per iteration.
+- It is a strong hypothesis, not a certainty; the falsification test is
+  the same smoke test (`bun run hello.js` must print promptly).
+
+### How to symbolize (for future debugging)
+
+`#:strip-binaries? #f` alone is **not** enough: Bun's own Makefile strips
+the binary during the build.  On Linux the `release-only` target runs
+`bun-link-lld-release-dsym`, which does
+`-$(STRIP) -s $(BUN_RELEASE_BIN) --wildcard -K _napi\*`.
+
+Override it with a make command-line variable (command-line assignments
+beat the Makefile's own `STRIP=`):
+
+```scheme
+(invoke "make" "release-only" (string-append "CPUS=" cpus) "STRIP=true")
+```
+
+Do **not** try to patch this with `substitute*` on `^STRIP=.*llvm-strip.*$`:
+a trailing `$` in a `substitute*` pattern eats the newline, welding the
+next line on (`STRIP=trueendif`) and unbalancing the Makefile's
+conditionals.
+
+Then, because `ptrace_scope=1` blocks attaching:
+
+```bash
+ulimit -c unlimited
+timeout -s ABRT 8 <bun> run hello.js
+coredumpctl info <bun>          # or: coredumpctl gdb <bun>
+```
+
+A ready-made script lives in the session scratchpad as `symbolize.sh`.
+
+### Superseded: earlier "symbolize the stack" plan
 
 1. Add `#:strip-binaries? #f` to `bun-stage0`'s arguments (and ideally
    keep debug info: the Makefile's `-g` is already in `BUN_LLD_FLAGS`).
