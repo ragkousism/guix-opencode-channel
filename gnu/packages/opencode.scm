@@ -213,6 +213,26 @@
 running Bun's TypeScript code-generation scripts during source builds.")
     (license license:expat)))
 
+;; Bun 1.0.0 vendors an older mimalloc fork (Jarred-Sumner/mimalloc, commit
+;; 7968d42, MI_MALLOC_VERSION 210) whose "default heap" accessor
+;; (mi_heap_get_default, returning mi_heap_t*) was replaced in current
+;; mimalloc releases by a distinct "theap" API family (mi_theap_get_default,
+;; returning the unrelated type mi_theap_t*).  Pin an older mimalloc release
+;; that still provides the classic API Bun's Zig bindings call, instead of
+;; adapting Bun's allocator code to an API with different type guarantees.
+(define mimalloc-3.1
+  (package
+    (inherit mimalloc)
+    (version "3.1.6")
+    (source (origin
+              (method url-fetch)
+              (uri (string-append
+                    "https://github.com/microsoft/mimalloc/archive/refs/tags/v"
+                    version ".tar.gz"))
+              (sha256
+               (base32
+                "1z7xvdbrp6yj5jhy2kmbqavg6bfjzphvbwca5qchs64gr0a1vr2l"))))))
+
 (define-public bun-stage0
   (package
     (name "bun-stage0")
@@ -253,10 +273,13 @@ running Bun's TypeScript code-generation scripts during source builds.")
               (invoke "tar" "xf" (assoc-ref inputs "webkit-prebuilt"))
               (setenv "JSC_BASE_DIR" (string-append (getcwd) "/bun-webkit"))
               ;; Bun's release tarball lacks the mimalloc submodule headers.
-              ;; Rehydrate them from Guix's mimalloc package.
+              ;; Rehydrate them from Guix's mimalloc package.  The headers
+              ;; live under a version-specific subdirectory (e.g.
+              ;; "include/mimalloc-3.3"), so locate it by content rather
+              ;; than hard-coding a version that will drift.
               (copy-recursively
-               (string-append (assoc-ref inputs "mimalloc")
-                              "/include/mimalloc-3.1")
+               (dirname (car (find-files (assoc-ref inputs "mimalloc")
+                                         "^mimalloc\\.h$")))
                "src/deps/mimalloc/include")
               ;; Bun's release tarball also omits boringssl headers.
               ;; Use OpenSSL compatibility headers to satisfy includes.
@@ -1723,7 +1746,7 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
        ("cmake-minimal" ,cmake-minimal)
        ("ninja" ,ninja)
        ("pkg-config" ,pkg-config)
-       ("mimalloc" ,mimalloc)
+       ("mimalloc" ,mimalloc-3.1)
        ("openssl" ,openssl)
        ("libarchive" ,libarchive)
        ("zlib" ,zlib)
