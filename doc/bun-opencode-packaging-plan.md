@@ -1,11 +1,143 @@
 # Bun + opencode Guix Packaging Plan
 
-Last updated: 2026-02-22
-Owner: Manolis / Codex session
-Status: Completed initial source-build chain; schema generation fallback removed; bun-build-system skeleton + smoke test added
+Last updated: 2026-08-05
+Owner: Manolis / Claude session
+Status: bun-stage0 builds and links (mimalloc ABI fix applied); NEW blocker found: bun-stage0 binary hangs on any JS execution. See "Known blocker" section below.
 
 ## Objective
 Package `opencode` in Guix with a fully source-built Bun chain.
+
+## Known blocker (2026-08-05): bun-stage0 hangs on JS execution
+
+### Status of this session's work
+- Fixed a real version-drift bug: `prepare-webkit` copied mimalloc headers
+  from a hard-coded `mimalloc-3.1` path; current Guix ships `mimalloc-3.3.2`.
+  Fixed to locate the header by content (`find-files ... "^mimalloc\\.h$"`)
+  instead of a hard-coded version string.
+- Found and fixed a real ABI hazard: Bun 1.0.0 vendors an old mimalloc fork
+  (`Jarred-Sumner/mimalloc` a.k.a. now `oven-sh/mimalloc`, commit `7968d42`,
+  `MI_MALLOC_VERSION 210`). Current Guix `mimalloc` (3.3.2) replaced the
+  classic `mi_heap_get_default()` (`mi_heap_t*`) with a distinct
+  `mi_theap_get_default()` (`mi_theap_t*` — a different type, not just a
+  rename; see `mimalloc_arena.zig` around `getThreadlocalDefault()`, whose
+  return value later flows into `mi_heap_malloc`/`mi_heap_destroy`). Rather
+  than rewrite Bun's Zig allocator code against an unverified ABI, pinned a
+  local `mimalloc-3.1` package variant (inherits Guix's `mimalloc`, source
+  overridden to `v3.1.6`, which still has the classic API). This is a plain
+  `package/inherit` override — see `mimalloc-3.1` definition just above
+  `bun-stage0` in `gnu/packages/opencode.scm`, and the
+  `("mimalloc" ,mimalloc-3.1)` native-input in `bun-stage0`.
+- Result: `bun-stage0` now builds and links successfully.
+  `bun --version` → `1.0.0`, exit 0.
+
+### The new blocker
+`bun run <any-script.js>`, including a trivial `console.log(...)`, does not
+execute — it spins indefinitely. Confirmed via `/proc/<pid>/status`: state
+`R` (running), ~99% CPU. This is a CPU-bound loop, not a crash or blocked
+I/O wait.
+
+### Root cause: corrected diagnosis
+The `prepare-webkit` phase (`gnu/packages/opencode.scm`, search for
+`"runtime.out.js"`) writes literal no-op placeholder files —
+`(display "(()=>{})();\n" port)` — for `src/runtime.out.js`,
+`src/runtime.out.refresh.js`, `src/runtime.node.out.js`,
+`src/runtime.bun.out.js`, and `src/fallback.out.js`, instead of Bun's real
+generated JS runtime bootstrap. The working hypothesis (strong, not yet
+proven end-to-end) is that Bun's native code spins waiting on JS-side
+runtime initialization state that a no-op stub never establishes.
+
+**This session's log previously attributed the missing runtime files to a
+missing `peechy` npm dependency unavailable offline. That appears to be a
+misattribution.** Checked directly against Bun v1.0.0's own `Makefile`:
+
+```makefile
+.PHONY: fallback_decoder
+fallback_decoder:
+	@$(ESBUILD) --target=esnext --bundle src/fallback.ts --format=iife --platform=browser --minify > src/fallback.out.js
+
+.PHONY: runtime_js
+runtime_js:
+	@NODE_ENV=production $(ESBUILD) --define:process.env.NODE_ENV="production" --target=esnext --bundle src/runtime/index.ts --format=iife --platform=browser --global-name=BUN_RUNTIME --minify --external:/bun:* > src/runtime.out.js; cat src/runtime.footer.js >> src/runtime.out.js
+	@NODE_ENV=production $(ESBUILD) ... --bundle src/runtime/index-with-refresh.ts ... > src/runtime.out.refresh.js; cat src/runtime.footer.with-refresh.js >> src/runtime.out.refresh.js
+	@NODE_ENV=production $(ESBUILD) ... --bundle src/runtime/index-without-hmr.ts --platform=node ... > src/runtime.node.pre.out.js; cat src/runtime.node.pre.out.js src/runtime.footer.node.js > src/runtime.node.out.js
+	@NODE_ENV=production $(ESBUILD) ... --bundle src/runtime/index-without-hmr.ts --platform=node ... > src/runtime.bun.pre.out.js; cat src/runtime.bun.pre.out.js src/runtime.footer.bun.js > src/runtime.bun.out.js
+```
+
+CORRECTION (2026-08-05, verification pass): the paragraph that previously
+stood here claimed peechy is entirely unrelated to these targets. That is
+only *half* right. Verified against the extracted tarball:
+
+- `src/api/schema.js` IS committed to the release tarball, so
+  peechy-the-CLI (codegen) is indeed not needed.
+- BUT `src/fallback.ts` and `src/runtime/hmr.ts` both do
+  `import { ByteBuffer } from "peechy"` — the peechy *runtime library*.
+  Import graph of the five bundle entrypoints:
+  - `runtime.node.out.js`, `runtime.bun.out.js` ← `index-without-hmr.ts`
+    → only `../runtime.js` + `./regenerator`. **No peechy — bundleable
+    offline with zero new inputs.**
+  - `runtime.out.js` ← `index.ts` → re-exports `./hmr` → **needs peechy**.
+  - `runtime.out.refresh.js` ← `index-with-refresh.ts` → `./hmr` +
+    `../react-refresh` → **needs peechy (and react-refresh)**.
+  - `fallback.out.js` ← `fallback.ts` → **needs peechy directly**.
+
+So the February log's peechy claim was partially correct after all — for
+three of the five blobs. peechy is MIT-licensed
+(github.com/jarred-sumner/peechy); its ByteBuffer runtime is small and can
+be vendored as an ordinary `origin` input if those three blobs turn out to
+matter.
+
+All bundle inputs verified present in the release tarball:
+`src/runtime/index.ts`, `index-without-hmr.ts`, `index-with-refresh.ts`,
+`src/fallback.ts`, and all four `src/runtime.footer*.js` files.
+
+`esbuild` is already a native-input in `bun-stage0` (used a few lines above
+the placeholder loop, to build `packages/bun-error/dist/index.js` — the
+exact same pattern needed here).
+
+Caveat on the hypothesis itself: it is NOT yet proven that the runtime
+stubs cause the hang. A plain `console.log` script does not obviously
+require injected BUN_RUNTIME helpers; the spin could also originate in the
+internal-module bootstrap (`src/js/out/*`, `InternalModuleRegistry`) that
+the prepare phase also touches. The staged fix below doubles as the
+falsification test.
+
+### Suggested next step (not yet implemented — untested)
+Stage 1 (zero new inputs): replace the placeholders for
+`runtime.node.out.js` and `runtime.bun.out.js` only, with real
+`invoke esbuild ...` bundles of `src/runtime/index-without-hmr.ts`
+(platform=node, `--external:/bun:*`), concatenating the matching
+`src/runtime.footer.{node,bun}.js` as the Makefile does. Rebuild, smoke
+test. If the hang clears, the HMR/browser blobs can stay stubbed for
+stage0's bootstrap purposes.
+
+Stage 2 (only if stage 1 is insufficient): vendor peechy source as an
+`origin` input, expose it to esbuild (alias/NODE_PATH), and bundle the
+remaining three blobs (`runtime.out.js`, `runtime.out.refresh.js`,
+`fallback.out.js`) for real too. `react-refresh` would also be needed for
+the refresh variant — check whether stage0 can keep that one stubbed.
+
+Smoke test after each stage:
+
+```bash
+guix build -c16 -L /home/manolis/repos/guix-opencode-channel bun-stage0
+guix shell -L /home/manolis/repos/guix-opencode-channel bun-stage0 -- bun run <(echo 'console.log("hello")')
+```
+
+Expect instant "hello" output, not a hang. If it still hangs, check
+`node-fallbacks` next (a sibling `vendor-without-npm` prerequisite,
+currently populated by direct-copying `src/node-fallbacks/*.js` to
+`src/node-fallbacks/out/*.js` around line 763 of the same file — this looks
+plausible but has not been runtime-verified either).
+
+Also note: `bun-from-source` (the later, CMake-based Bun 1.3.8 package,
+further down in the same file) has its *own*, separate placeholder
+mechanism for the same class of files (`runtime.out.js` as literal
+`export default {};`, in the big Python/shell codegen block). If fixing
+`bun-stage0`'s runtime.js unblocks it, the same class of issue likely still
+needs revisiting there — check whether `bun-from-source`'s own build
+actually exercises the JS runtime at any point (it uses `bun-stage0`/
+`bun-bootstrap-binary` for codegen scripts), since it may hit the identical
+hang.
 
 ## Scope
 - Target system: `x86_64-linux`
