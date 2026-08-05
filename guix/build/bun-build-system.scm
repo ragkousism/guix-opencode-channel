@@ -59,16 +59,13 @@
 
 (define (lockfile-mode->flags lockfile-mode)
   (cond
-   ((or (equal? lockfile-mode "auto")
-        (eq? lockfile-mode 'auto))
+   ((equal? lockfile-mode "auto")
     (if (lockfile-present?)
         '("--frozen-lockfile")
         '()))
-   ((or (equal? lockfile-mode "frozen")
-        (eq? lockfile-mode 'frozen))
+   ((equal? lockfile-mode "frozen")
     '("--frozen-lockfile"))
-   ((or (equal? lockfile-mode "update")
-        (eq? lockfile-mode 'update))
+   ((equal? lockfile-mode "update")
     '())
    (else
     (error "invalid lockfile-mode, expected one of auto/frozen/update"
@@ -78,14 +75,18 @@
                     (offline? #t)
                     (lockfile-mode "auto")
                     (bun-install-flags '())
+                    (install-scripts? #f)
                     #:allow-other-keys)
   (if (file-exists? "package.json")
       (let ((bun (string-append (assoc-ref inputs "bun") "/bin/bun")))
-        ;; Keep installs deterministic by default: respect lockfiles and avoid
-        ;; network unless explicitly disabled by package arguments.
         (apply invoke bun "install"
                (append (lockfile-mode->flags lockfile-mode)
                        (if offline? '("--offline") '())
+                       ;; Skip lifecycle scripts by default since they often
+                       ;; pull prebuilt binaries from remote sources.
+                       (if install-scripts?
+                           '()
+                           '("--ignore-scripts"))
                        bun-install-flags)))
       (format #t "no package.json found; skipping bun install~%"))
   #t)
@@ -120,26 +121,17 @@
   #t)
 
 (define* (restore-input-symlink-tree inputs mappings #:key (strict? #t))
-  "Restore symlinked paths from INPUTS according to MAPPINGS.
-Each mapping must be either a pair (TARGET . INPUT-NAME) or a two-element
-list (TARGET INPUT-NAME)."
-  (define (normalize mapping)
-    (match mapping
-      ((target input-name)
-       (cons target input-name))
-      ((target . input-name)
-       (cons target input-name))
-      (_
-       (error "invalid restore-input-symlink-tree mapping" mapping))))
-
+  "Restore symlinked paths from INPUTS according to MAPPINGS, a list of
+pairs (TARGET . INPUT-NAME)."
   (for-each
    (lambda (mapping)
-     (let* ((entry (normalize mapping))
-            (target (car entry))
-            (input-name (cdr entry))
+     (let* ((target (car mapping))
+            (input-name (cdr mapping))
             (source (assoc-ref inputs input-name)))
        (cond
         (source
+         ;; Use rm(1) so an existing symlink to a directory is removed without
+         ;; traversing into the linked tree.
          (when (or (file-exists? target)
                    (false-if-exception (lstat target)))
            (invoke "rm" "-rf" target))

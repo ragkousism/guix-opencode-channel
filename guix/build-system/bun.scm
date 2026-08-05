@@ -38,18 +38,17 @@
     (json record)
     ,@%default-gnu-imported-modules))
 
-(define (default-bun)
-  "Return the default Bun package, resolved lazily."
-  (@* (gnu packages opencode) bun-from-source))
-
 (define* (lower name
                 #:key source inputs native-inputs outputs system target
-                (bun (default-bun))
+                (bun #f)
                 #:allow-other-keys
                 #:rest arguments)
   "Return a bag for NAME."
   (define private-keywords
     '(#:target #:bun #:inputs #:native-inputs))
+
+  (unless bun
+    (error "bun-build-system requires an explicit #:bun package"))
 
   (and (not target)                    ;XXX: no cross-compilation
        (bag
@@ -67,6 +66,10 @@
          (build bun-build)
          (arguments (strip-keyword-arguments private-keywords arguments)))))
 
+(define (default-guile-json)
+  "Return the default guile-json package, resolved lazily."
+  (@* (gnu packages guile) guile-json-4))
+
 (define* (bun-build name inputs
                     #:key
                     source
@@ -74,6 +77,7 @@
                     (bun-install-flags ''())
                     (offline? #t)
                     (lockfile-mode "auto")
+                    (install-scripts? #f)
                     (test-target "test")
                     (tests? #t)
                     (phases '%standard-phases)
@@ -81,29 +85,32 @@
                     (search-paths '())
                     (system (%current-system))
                     (guile #f)
+                    (guile-json (default-guile-json))
                     (imported-modules %bun-build-system-modules)
                     (modules '((guix build bun-build-system)
                                (guix build utils))))
   "Build SOURCE using BUN and INPUTS."
   (define builder
-    (with-imported-modules imported-modules
-      #~(begin
-          (use-modules #$@(sexp->gexp modules))
-          (bun-build #:name #$name
-                     #:source #+source
-                     #:system #$system
-                     #:bun-flags #$bun-flags
-                     #:bun-install-flags #$bun-install-flags
-                     #:offline? #$offline?
-                     #:lockfile-mode #$lockfile-mode
-                     #:test-target #$test-target
-                     #:tests? #$tests?
-                     #:phases #$phases
-                     #:outputs #$(outputs->gexp outputs)
-                     #:search-paths '#$(sexp->gexp
-                                        (map search-path-specification->sexp
-                                             search-paths))
-                     #:inputs #$(input-tuples->gexp inputs)))))
+    (with-extensions (list guile-json)
+      (with-imported-modules imported-modules
+        #~(begin
+            (use-modules #$@(sexp->gexp modules))
+            (bun-build #:name #$name
+                       #:source #+source
+                       #:system #$system
+                       #:bun-flags #$bun-flags
+                       #:bun-install-flags #$bun-install-flags
+                       #:offline? #$offline?
+                       #:lockfile-mode #$lockfile-mode
+                       #:install-scripts? #$install-scripts?
+                       #:test-target #$test-target
+                       #:tests? #$tests?
+                       #:phases #$phases
+                       #:outputs #$(outputs->gexp outputs)
+                       #:search-paths '#$(sexp->gexp
+                                          (map search-path-specification->sexp
+                                               search-paths))
+                       #:inputs #$(input-tuples->gexp inputs))))))
 
   (mlet %store-monad ((guile (package->derivation (or guile (default-guile))
                                                   system #:graft? #f)))
