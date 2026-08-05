@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-05
 Owner: Manolis / Claude session
-Status: bun-stage0 builds and links (mimalloc ABI fix applied); NEW blocker found: bun-stage0 binary hangs on any JS execution. See "Known blocker" section below.
+Status: bun-stage0 builds and links (mimalloc ABI fix applied); bun-stage0 binary still hangs on JS execution. Stage 1 of the fix plan was implemented and DID NOT fix it — the runtime-blob hypothesis is falsified. See "Known blocker" and "Stage 1 result" below.
 
 ## Objective
 Package `opencode` in Guix with a fully source-built Bun chain.
@@ -138,6 +138,91 @@ needs revisiting there — check whether `bun-from-source`'s own build
 actually exercises the JS runtime at any point (it uses `bun-stage0`/
 `bun-bootstrap-binary` for codegen scripts), since it may hit the identical
 hang.
+
+### Stage 1 result (2026-08-05): hypothesis FALSIFIED
+
+Stage 1 was implemented and built.  It did **not** fix the hang.
+
+What was done (committed; see the `bun-stage0: Bundle node/bun runtime
+blobs from source` commit):
+
+- `gnu/packages/opencode.scm` (`bun-stage0`, `build` phase): replaced the
+  no-op placeholders for `src/runtime.node.out.js` and
+  `src/runtime.bun.out.js` with a real esbuild bundle of
+  `src/runtime/index-without-hmr.ts`, concatenated with
+  `src/runtime.footer.{node,bun}.js`, mirroring Bun's `runtime_js` target.
+  The other three blobs remain placeholders.
+- Verified upstream runs the *byte-identical* esbuild command for both
+  outputs (only the footer differs), so one bundle feeds both.
+- Dropped upstream's `--define:process.env.NODE_ENV=...`: `NODE_ENV` does
+  not appear anywhere in this entry point's source graph, and the emitted
+  bundle contains zero references to it.  (Note for anyone re-adding it:
+  in upstream's Makefile the shell strips the quotes, so esbuild receives
+  a bare identifier rather than a JSON string — that would inject an
+  undefined global.  It is inert here only because nothing reads it.)
+
+Proof the change actually took effect (i.e. this is a real falsification,
+not a silently-skipped edit): the build log contains esbuild's output
+`src/runtime.node.pre.out.js  10.1kb`, versus the previous 12-byte stub.
+
+Result: `guix build` succeeds →
+`/gnu/store/mvjhlrrapxpqw7qbr7yf3mghjb68j50a-bun-stage0-1.0.0`.
+`bun --version` → `1.0.0` (exit 0).
+`bun run hello.js` → still spins, killed by `timeout 20` (exit 124).
+
+### Narrowed scope of the hang (new evidence)
+
+Only *JS execution* hangs.  Everything around it works:
+
+| command | result |
+|---|---|
+| `bun --version` | `1.0.0`, exit 0 |
+| `bun --help` | exit 0 |
+| `bun build hello.js` | exit 0 — bundler/transpiler path is fine |
+| `bun run /nonexistent.js` | prompt `error: missing script`, exit 1 — file resolution and error paths are fine |
+| `bun run hello.js` | hangs forever, ~99% CPU |
+
+So the spin is after argument parsing and file resolution, in the
+VM-startup / module-load / execute path — and it is CPU-bound, not
+blocked on I/O.
+
+Stack sample (via `timeout -s ABRT` + `coredumpctl info`, since
+`ptrace_scope=1` blocks attaching):
+
+```
+Stack trace of thread <main>:
+#0  0x...  n/a (bun + 0x29e1490)
+#1  0x...  n/a (bun + 0x3fa2470)
+...
+#10 0x...  n/a (bun + 0x423d49b)
+#11 __libc_start_call_main (libc.so.6)
+```
+
+Main thread is 11 frames deep from `main`, entirely inside bun's own code,
+not in a syscall.  (The only other thread sits in a normal
+`pthread_cond_timedwait`.)  Symbols are unavailable: the binary is
+stripped, `.symtab` is gone and `.dynsym` has only the 147 exported
+`BUN_1.0` symbols, so these offsets cannot be resolved as-is.
+
+### Suggested next step
+
+Symbolize that stack — this should identify the loop directly and is much
+cheaper than more hypothesis-guessing:
+
+1. Add `#:strip-binaries? #f` to `bun-stage0`'s arguments (and ideally
+   keep debug info: the Makefile's `-g` is already in `BUN_LLD_FLAGS`).
+2. Rebuild, reproduce the hang, re-dump with
+   `ulimit -c unlimited; timeout -s ABRT 6 <bun> run hello.js`, then
+   `coredumpctl info` (or `coredumpctl gdb` → `bt`).
+3. The resolved frames should say whether this is, e.g., the internal
+   module registry, a JSC bootstrap loop, or one of the `-Wl,--wrap=`
+   libc wrappers from `workaround-missing-symbols.cpp` (a plausible
+   suspect given Bun 1.0.0 predates glibc 2.41 and the link line wraps
+   `stat`/`fstat`/`pow`/`exp`/... — a mismatch there can loop).
+
+Only after that should Stage 2 (vendoring `peechy` to un-stub the
+remaining three blobs) be considered; on current evidence those blobs are
+not implicated in plain-script execution.
 
 ## Scope
 - Target system: `x86_64-linux`
