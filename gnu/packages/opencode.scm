@@ -19,6 +19,7 @@
 (define-module (gnu packages opencode)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix build-system bun)
+  #:use-module (guix build-system cmake)
   #:use-module (guix build-system gnu)
   #:use-module (guix download)
   #:use-module (guix gexp)
@@ -33,6 +34,7 @@
   #:use-module (gnu packages elf)
   #:use-module (gnu packages gcc)
   #:use-module (gnu packages golang)
+  #:use-module (gnu packages icu4c)
   #:use-module (gnu packages javascript)
   #:use-module (gnu packages llvm)
   #:use-module (gnu packages ninja)
@@ -160,6 +162,156 @@
     (sha256
      (base32
       "01yx2n8qxf09xp8f70f5wbgxx17plwxsdhgqcznb0pfdfzs9nph4"))))
+
+;; Bun does not link against a stock JavaScriptCore: it uses its own WebKit
+;; fork, built as a static JSCOnly port with Bun-specific additions enabled.
+;; Upstream distributes that as a prebuilt tarball; build it from source
+;; instead, so that no binary blob enters the bootstrap chain.  The commit is
+;; the one recorded in the prebuilt tarball's package.json, and the
+;; configuration mirrors the fork's own Dockerfile.  Note upstream copies the
+;; host distribution's static ICU archives into the tarball; here ICU comes
+;; from Guix instead, which is why no ICU version needs pinning.
+(define* (make-bun-webkit revision hash #:key (extra-configure-flags '())
+                          (use-clang? #f))
+  "Return a package building JavaScriptCore from Bun's WebKit fork at
+REVISION.  Each Bun release pins its own WebKit revision, and the options that
+revision expects differ, hence EXTRA-CONFIGURE-FLAGS."
+  (package
+    (name "bun-webkit")
+    (version (string-append "0.0.1-" (substring revision 0 7)))
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/oven-sh/WebKit")
+             (commit revision)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 hash))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:tests? #f
+      #:build-type "Release"
+      #:configure-flags
+      #~(append
+         (list "-DPORT=JSCOnly"
+               "-DENABLE_STATIC_JSC=ON"
+               "-DENABLE_BUN_SKIP_FAILING_ASSERTIONS=ON"
+               "-DUSE_THIN_ARCHIVES=OFF"
+               "-DUSE_BUN_JSC_ADDITIONS=ON"
+               "-DENABLE_FTL_JIT=ON"
+               "-DALLOW_LINE_AND_COLUMN_NUMBER_IN_BUILTINS=ON"
+               "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
+         ;; Revisions that enable Bun's own run loop only compile with
+         ;; clang, which is what upstream builds them with.
+         (if #$use-clang?
+             (list "-DCMAKE_C_COMPILER=clang"
+                   "-DCMAKE_CXX_COMPILER=clang++")
+             '())
+         '#$extra-configure-flags)
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'build
+            (lambda* (#:key parallel-build? #:allow-other-keys)
+              ;; The inspector-protocol generator shells out to a C
+              ;; preprocessor, falling back to /usr/bin/{clang,gcc} when CC is
+              ;; unset -- neither of which exists in the build container.
+              (setenv "CC" (if #$use-clang? "clang" "gcc"))
+              (invoke "make" "jsc"
+                      "-j" (if parallel-build?
+                               (number->string (parallel-job-count))
+                               "1"))))
+          ;; The JSCOnly port has no install target; assemble the layout Bun
+          ;; expects (the same one the prebuilt tarball provides).
+          (replace 'install
+            (lambda* (#:key inputs #:allow-other-keys)
+              (let* ((include (string-append #$output "/include"))
+                     (jsc-include (string-append include "/JavaScriptCore"))
+                     (lib (string-append #$output "/lib")))
+                (mkdir-p jsc-include)
+                (mkdir-p lib)
+                (for-each (lambda (archive) (install-file archive lib))
+                          (find-files "lib" "\\.a$"))
+                ;; Only the headers generated at the top of the build tree
+                ;; (cmakeconfig.h); find-files matches on the base name, so
+                ;; restrict by directory rather than by pattern.
+                (for-each (lambda (header) (install-file header include))
+                          (find-files "."
+                                      (lambda (file stat)
+                                        (and (string-suffix? ".h" file)
+                                             (string=? (dirname file) ".")))))
+                (for-each (lambda (header) (install-file header jsc-include))
+                          (append
+                           (find-files "JavaScriptCore/Headers/JavaScriptCore"
+                                       "\\.h$")
+                           (find-files
+                            "JavaScriptCore/PrivateHeaders/JavaScriptCore"
+                            "\\.h$")))
+                (copy-recursively "WTF/Headers/wtf"
+                                  (string-append include "/wtf"))
+                (copy-recursively "bmalloc/Headers/bmalloc"
+                                  (string-append include "/bmalloc"))
+                ;; Later revisions also generate headers here.  Their build
+                ;; tree additionally holds WebKit's own build helpers under
+                ;; bin/, but Bun consumes only include/ and lib/, so those are
+                ;; deliberately not installed.
+                (when (file-exists? "JavaScriptCore/DerivedSources")
+                  (for-each (lambda (header)
+                              (install-file header jsc-include))
+                            (find-files "JavaScriptCore/DerivedSources"
+                                        "\\.h$")))
+                ;; Bun's build runs these generator scripts out of the JSC
+                ;; source tree.
+                (let ((source (assoc-ref inputs "source"))
+                      (jsc (string-append #$output
+                                          "/Source/JavaScriptCore")))
+                  (mkdir-p jsc)
+                  (copy-recursively
+                   (string-append source "/Source/JavaScriptCore/Scripts")
+                   (string-append jsc "/Scripts"))
+                  (install-file
+                   (string-append source
+                                  "/Source/JavaScriptCore/create_hash_table")
+                   jsc))))))))
+    (native-inputs
+     (append (list perl python ruby)
+             (if use-clang? (list clang lld) '())))
+    (inputs
+     (list icu4c))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://github.com/oven-sh/WebKit")
+    (synopsis "JavaScriptCore build used by Bun")
+    (description
+     "This package provides a static JavaScriptCore built from Bun's WebKit
+fork, in the directory layout Bun's build system expects.  It replaces the
+prebuilt @code{bun-webkit} tarball that upstream downloads.")
+    (license license:lgpl2.1+)))
+
+;; The revision Bun 1.0.0 pins, taken from the prebuilt tarball's package.json.
+(define-public bun-webkit
+  (make-bun-webkit "48c1316e907ca597e27e5a7624160dc18a4df8ec"
+                   "1pg74mihlpk1mim1k5mkcr9xldvn6wz2cljzywzm5y9q38w8xh3n"
+                   #:extra-configure-flags
+                   '("-DENABLE_SINGLE_THREADED_VM_ENTRY_SCOPE=ON")))
+
+;; The revision Bun 1.2.0 pins, from WEBKIT_VERSION in its
+;; cmake/tools/SetupWebKit.cmake.
+(define-public bun-webkit-for-1.2.0
+  (make-bun-webkit "9e3b60e4a6438d20ee6f8aa5bec6b71d2b7d213f"
+                   "1lbs2bx6pyv61rvm4gdmhdf3yln1f7xc3kng82lcf3kgi9ixhld1"
+                   #:extra-configure-flags
+                   '("-DUSE_BUN_EVENT_LOOP=OFF"
+                     "-DENABLE_REMOTE_INSPECTOR=ON")))
+
+;; The revision Bun 1.3.8 pins; its tag name encodes the commit.
+(define-public bun-webkit-for-1.3.8
+  (make-bun-webkit "9a2cc42ae1bf693a0fd0ceb9b1d7d965d9cfd3ea"
+                   "132jgjf7f0z5kn4698wvs8hvpad2m6q4qmvsxqbnfy4k3lhga1yg"
+                   #:use-clang? #t
+                   #:extra-configure-flags
+                   '("-DUSE_BUN_EVENT_LOOP=ON"
+                     "-DENABLE_REMOTE_INSPECTOR=ON")))
 
 ;; Bun 1.0.0 vendors an older mimalloc fork (Jarred-Sumner/mimalloc, commit
 ;; 7968d42, MI_MALLOC_VERSION 210) whose "default heap" accessor
