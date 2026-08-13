@@ -145,6 +145,20 @@
      (base32
       "01yx2n8qxf09xp8f70f5wbgxx17plwxsdhgqcznb0pfdfzs9nph4"))))
 
+;; Bun 1.0.0 keeps mimalloc as a submodule, absent from the release tarball.
+;; Its Zig allocator bindings are written against that fork's 2.1.0-era API
+;; and reach into heap internals, so substituting a current mimalloc release
+;; corrupts the heap in ways that only show up sporadically, far from the
+;; allocation site.  Use the commit the submodule pins.
+(define bun-stage0-mimalloc-source
+  (origin
+    (method url-fetch)
+    (uri (string-append "https://github.com/oven-sh/mimalloc/archive/"
+                        "7968d4285043401bb36573374710d47a4081a063.tar.gz"))
+    (file-name "bun-stage0-mimalloc-7968d42.tar.gz")
+    (sha256
+     (base32 "1vh8ysl7ik8ksm8hvnkj3jsdsfvhsadn80snqhw0wfjwqxnfw4rw"))))
+
 ;; Bun's build clones these pinned repositories into vendor/ while building,
 ;; which a build container cannot do.  Fetch them as ordinary origins instead;
 ;; see the 'unpack-vendored-sources phase for how the clone step is satisfied.
@@ -441,15 +455,12 @@ prebuilt @code{bun-webkit} tarball that upstream downloads.")
           (add-before 'build 'prepare-webkit
             (lambda* (#:key inputs #:allow-other-keys)
               (setenv "JSC_BASE_DIR" (assoc-ref inputs "bun-webkit"))
-              ;; Bun's release tarball lacks the mimalloc submodule headers.
-              ;; Rehydrate them from Guix's mimalloc package.  The headers
-              ;; live under a version-specific subdirectory (e.g.
-              ;; "include/mimalloc-3.3"), so locate it by content rather
-              ;; than hard-coding a version that will drift.
-              (copy-recursively
-               (dirname (car (find-files (assoc-ref inputs "mimalloc")
-                                         "^mimalloc\\.h$")))
-               "src/deps/mimalloc/include")
+              ;; The release tarball omits the mimalloc submodule; restore it
+              ;; at the pinned commit so the Makefile builds the allocator
+              ;; Bun's Zig bindings were written against.
+              (mkdir-p "src/deps/mimalloc")
+              (invoke "tar" "xf" (assoc-ref inputs "mimalloc-source")
+                      "-C" "src/deps/mimalloc" "--strip-components=1")
               ;; Bun's release tarball also omits boringssl headers.
               ;; Use OpenSSL compatibility headers to satisfy includes.
               (mkdir-p "src/deps/boringssl/include")
@@ -484,6 +495,12 @@ prebuilt @code{bun-webkit} tarball that upstream downloads.")
                  "EMIT_LLVM_FOR_RELEASE=")
                 (("OPTIMIZATION_LEVEL=-O3 \\$\\(MARCH_NATIVE\\)")
                  "OPTIMIZATION_LEVEL=-O2 $(MARCH_NATIVE)")
+                ;; simdutf picks its implementation at run time, so building
+                ;; for a fixed CPU_TARGET does not keep it off the AVX-512
+                ;; path, where it segfaults validating input here.  Compile
+                ;; that kernel out and let it dispatch to the AVX2 one.
+                (("-DSTATICALLY_LINKED_WITH_JavaScriptCore=1")
+                 "-DSTATICALLY_LINKED_WITH_JavaScriptCore=1 -DSIMDUTF_IMPLEMENTATION_ICELAKE=0")
                 ;; Avoid forcing non-PIC static libatomic at final link.
                 (("-l:libatomic\\.a")
                  "-latomic")
@@ -698,23 +715,15 @@ prebuilt @code{bun-webkit} tarball that upstream downloads.")
                    "static const size_t root_certs_size = sizeof(root_certs) / sizeof(root_certs[0]);"))
 
                 ;; `release-only` does not model all dependencies correctly for
-                ;; this tarball.  Build/link required dep objects explicitly.
-                ;; The release tarball also flattens picohttpparser and omits
-                ;; mimalloc sources, so provide those expected build inputs.
-                (let* ((mimalloc-lib (string-append (assoc-ref inputs "mimalloc")
-                                                    "/lib"))
-                       (mimalloc-objects (find-files mimalloc-lib
-                                                     "^mimalloc\\.o$")))
-                  (unless (pair? mimalloc-objects)
-                    (error "mimalloc.o not found in mimalloc input"
-                           mimalloc-lib))
-                  (mkdir-p "src/deps/picohttpparser")
-                  (when (file-exists? "src/deps/picohttpparser/picohttpparser.c")
-                    (delete-file "src/deps/picohttpparser/picohttpparser.c"))
-                  (copy-file "src/deps/picohttpparser.c"
-                             "src/deps/picohttpparser/picohttpparser.c")
-                  (copy-file (car mimalloc-objects)
-                             "src/deps/libmimalloc.o"))
+                ;; this tarball, and the release tarball flattens
+                ;; picohttpparser, so lay it out where the build expects it.
+                ;; libmimalloc.o comes from the `mimalloc' target below,
+                ;; built from the submodule commit Bun pins.
+                (mkdir-p "src/deps/picohttpparser")
+                (when (file-exists? "src/deps/picohttpparser/picohttpparser.c")
+                  (delete-file "src/deps/picohttpparser/picohttpparser.c"))
+                (copy-file "src/deps/picohttpparser.c"
+                           "src/deps/picohttpparser/picohttpparser.c")
 
                 ;; The release tarball omits several vendored dep trees that
                 ;; Bun normally builds into local archives.  Provide a mix of
@@ -1558,12 +1567,18 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
                      "libbase64"
                      "libtcc")))
 
+                (invoke "make" "mimalloc")
                 (invoke "make" "sqlite")
                 (invoke "make" "picohttp")
                 (invoke "make" "uws")
                 (let ((cpus (or (getenv "NIX_BUILD_CORES") "1")))
+                  ;; The Makefile defaults CPU_TARGET to "native", which makes
+                  ;; the build depend on the builder's CPU and lets simdutf
+                  ;; take its AVX-512 path, where it crashes.  Use the target
+                  ;; upstream's own x86_64 release builds use.
                   (invoke "make" "release-only"
-                          (string-append "CPUS=" cpus))))))
+                          (string-append "CPUS=" cpus)
+                          "CPU_TARGET=haswell")))))
           (replace 'install
             (lambda* (#:key inputs outputs #:allow-other-keys)
               (let* ((out (assoc-ref outputs "out"))
@@ -1596,7 +1611,7 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
        ("cmake-minimal" ,cmake-minimal)
        ("ninja" ,ninja)
        ("pkg-config" ,pkg-config)
-       ("mimalloc" ,mimalloc-3.1)
+       ("mimalloc-source" ,bun-stage0-mimalloc-source)
        ("openssl" ,openssl)
        ("libarchive" ,libarchive)
        ("zlib" ,zlib)
@@ -1646,7 +1661,8 @@ newer Bun releases.")
       #:tests? #f
       #:modules '((guix build gnu-build-system)
                   (guix build utils)
-                  (guix build bun-build-system))
+                  (guix build bun-build-system)
+                  (ice-9 textual-ports))
       #:imported-modules `(,@%default-gnu-imported-modules
                            (json)
                            (json builder)
@@ -1748,6 +1764,16 @@ newer Bun releases.")
                        "        if not marker.exists():\n"
                        "            marker.write_text('{}\\n')\n"
                        "        marker.touch()\n"))
+
+              ;; Upstream builds with its own Zig fork, downloaded prebuilt,
+              ;; which adds this field to Build.Step.Compile.  Guard it the
+              ;; way the surrounding code guards other optional fields, so a
+              ;; stock Zig works and the fork keeps its behaviour.
+              (substitute* "build.zig"
+                (("    obj\\.no_link_obj = opts\\.os != \\.windows and !opts\\.no_llvm;")
+                 (string-append
+                  "    if (@hasField(std.meta.Child(@TypeOf(obj)), \"no_link_obj\"))\n"
+                  "        obj.no_link_obj = opts.os != .windows and !opts.no_llvm;")))
 
               ;; `vendor/zig` is seeded in offline inputs.
               (unless (file-exists? "vendor/zig/zig")
@@ -2098,6 +2124,25 @@ newer Bun releases.")
               (substitute* "src/codegen/bundle-modules.ts"
                 (("\\[\"--minify-syntax\", \"--keep-names\"\\]")
                  "[\"--minify-syntax\"]"))
+              ;; import.meta.dirname postdates 1.0.0, which spells it
+              ;; import.meta.dir.  Left undefined it silently yields bogus
+              ;; paths rather than an error, so the generators fail later
+              ;; with confusing missing-file messages.
+              (substitute* (find-files "src/codegen" "\\.ts$")
+                (("import\\.meta\\.dirname") "import.meta.dir"))
+              ;; 1.0.0 refuses to load bun:test outside `bun test'.  The
+              ;; generator uses it for a single filename assertion, so
+              ;; express that directly instead.
+              (substitute* "src/codegen/bindgen-lib-internal.ts"
+                (("import \\{ expect \\} from \"bun:test\";")
+                 (string-append
+                  "const expect = (value: any) => ({\n"
+                  "  toEndWith(suffix: string) {\n"
+                  "    if (!String(value).endsWith(suffix))\n"
+                  "      throw new Error(`expected ${value} to end with"
+                  " ${suffix}`);\n"
+                  "  },\n"
+                  "});")))
               (let* ((helpers (string-append (getcwd) "/.guix-bun"))
                      (shims (string-append helpers "/shims.js"))
                      (wrapper (string-append helpers "/bun")))
@@ -2140,14 +2185,19 @@ if (typeof Bun.stringWidth === \"undefined\")
 }
 " port)))
                 ;; CMake resolves BUN_EXECUTABLE from PATH, so the shims have
-                ;; to travel with the executable rather than the command line.
+                ;; to travel with the executable.  They must not reach the
+                ;; `bun build' subprocesses the generators spawn, which rules
+                ;; out bunfig.toml's preload.  1.0.0 also mis-parses a flag
+                ;; placed before the `run' subcommand, so drop that word;
+                ;; `bun run FILE' and `bun FILE' are equivalent here.
                 (call-with-output-file wrapper
                   (lambda (port)
                     ;; There is no /bin/sh in the build container, and this
-                    ;; file is created after the shebang-patching phases.
+                    ;; file is written after the shebang-patching phases.
                     (display (string-append
-                              "#!" (which "bash") "\nexec "
-                              (assoc-ref inputs "bun-stage0")
+                              "#!" (which "bash") "\n"
+                              "if [ \"$1\" = run ]; then shift; fi\n"
+                              "exec " (assoc-ref inputs "bun-stage0")
                               "/bin/bun --preload " shims " \"$@\"\n")
                              port)))
                 (chmod wrapper #o755)
@@ -2158,10 +2208,9 @@ if (typeof Bun.stringWidth === \"undefined\")
               (setenv "HOME" (getcwd))
               (setenv "BUN_DEBUG_QUIET_LOGS" "1")
               (setenv "CARGO_NET_OFFLINE" "true")
-              ;; Codegen runs on the source-built stage0 Bun, reached through
-              ;; the shim wrapper that 'adapt-codegen-to-stage0 puts on PATH.
-              ;; Do not prepend its bin directory here: that would shadow the
-              ;; wrapper with the unshimmed binary.
+              ;; Codegen runs on the source-built stage0 Bun, which
+              ;; 'adapt-codegen-to-stage0 already puts on PATH together with
+              ;; the bunfig.toml that loads its shims.
               ;; Use full local parallelism for CMake/Ninja.
               (setenv "CMAKE_BUILD_PARALLEL_LEVEL" "16")
               ;; Guix kills builds that stay silent for too long; emit periodic
@@ -2206,7 +2255,7 @@ if (typeof Bun.stringWidth === \"undefined\")
        ("clang" ,clang-19)
        ("lld" ,lld-19)
        ("llvm" ,llvm-19)
-       ("zig" ,zig-0.14)
+       ("zig" ,zig-0.15)
        ("rust" ,rust)
        ("rust:cargo" ,rust "cargo")
        ("go" ,go)
