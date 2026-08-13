@@ -161,58 +161,6 @@
      (base32
       "01yx2n8qxf09xp8f70f5wbgxx17plwxsdhgqcznb0pfdfzs9nph4"))))
 
-(define bun-bootstrap-binary-1.3.8
-  (package
-    (name "bun-bootstrap-binary")
-    (version "1.3.8")
-    (source
-     (origin
-       (method url-fetch)
-       (uri
-        "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64-baseline.zip")
-       (sha256
-        (base32
-         "0b5bwk42w5qkpgv2ar8hff989y91izxcwbjlglbrax1xq0m67r5v"))))
-    (build-system gnu-build-system)
-    (arguments
-     (list
-      #:tests? #f
-      #:strip-binaries? #f
-      #:validate-runpath? #f
-      #:phases
-      #~(modify-phases %standard-phases
-          (replace 'unpack
-            (lambda* (#:key source #:allow-other-keys)
-              (invoke "unzip" "-q" source)))
-          (delete 'configure)
-          (replace 'build
-            (lambda _
-              #t))
-          (replace 'install
-            (lambda* (#:key outputs inputs #:allow-other-keys)
-              (let* ((out (assoc-ref outputs "out"))
-                     (bin (string-append out "/bin"))
-                     (bun (string-append bin "/bun"))
-                     (interpreter
-                      (search-input-file inputs "/lib/ld-linux-x86-64.so.2")))
-                (mkdir-p bin)
-                (install-file "bun-linux-x64-baseline/bun" bin)
-                (chmod bun #o755)
-                (invoke "patchelf"
-                        "--set-interpreter" interpreter
-                        bun)))))))
-    (native-inputs
-     (list unzip patchelf))
-    (inputs
-     (list glibc))
-    (supported-systems '("x86_64-linux"))
-    (home-page "https://bun.sh")
-    (synopsis "Bootstrap Bun binary for build-time code generation")
-    (description
-     "Prebuilt Bun binary used only as a temporary bootstrap runtime for
-running Bun's TypeScript code-generation scripts during source builds.")
-    (license license:expat)))
-
 ;; Bun 1.0.0 vendors an older mimalloc fork (Jarred-Sumner/mimalloc, commit
 ;; 7968d42, MI_MALLOC_VERSION 210) whose "default heap" accessor
 ;; (mi_heap_get_default, returning mi_heap_t*) was replaced in current
@@ -2241,10 +2189,10 @@ newer Bun releases.")
               (setenv "HOME" (getcwd))
               (setenv "BUN_DEBUG_QUIET_LOGS" "1")
               (setenv "CARGO_NET_OFFLINE" "true")
-              ;; bun-stage0 currently compiles but does not execute JS reliably.
-              ;; Prefer a known-good bootstrap Bun for build-time codegen.
+              ;; Run build-time codegen with the source-built stage0 Bun, so
+              ;; that no prebuilt Bun binary takes part in the build.
               (setenv "PATH"
-                      (string-append (assoc-ref inputs "bun-bootstrap-binary")
+                      (string-append (assoc-ref inputs "bun-stage0")
                                      "/bin:"
                                      (getenv "PATH")))
               ;; Use full local parallelism for CMake/Ninja.
@@ -2273,7 +2221,6 @@ newer Bun releases.")
      (list glibc))
     (native-inputs
      `(("offline-seed" ,offline-seed)
-       ("bun-bootstrap-binary" ,bun-bootstrap-binary-1.3.8)
        ("bun-stage0" ,bun-stage0)
        ("lezer-common" ,lezer-common-source)
        ("lezer-cpp" ,lezer-cpp-source)
@@ -2614,7 +2561,7 @@ fi")
           (delete 'strip))))
     (native-inputs
      `(("bun-from-source" ,bun-from-source)
-       ("bun-schema-generator" ,bun-bootstrap-binary-1.3.8)
+       ("bun-schema-generator" ,bun-from-source)
        ("node-modules" ,opencode-node-modules)
        ("models-dev-api" ,models-dev-api-json)
        ("app-node-modules" ,app-node-modules)
