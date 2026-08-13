@@ -105,15 +105,6 @@
                      #~(begin
                          (mkdir #$output)))))
 
-(define webkit-prebuilt-stage0
-  (origin
-    (method url-fetch)
-    (uri
-     "https://github.com/oven-sh/WebKit/releases/download/autobuild-64d04ec1a65d91326c5f2298b9c7d05b56125252/bun-webkit-linux-amd64.tar.gz")
-    (sha256
-     (base32
-      "01r1lbz1bl54wfs4wj8if7zzlx2603s75188yxzizq29iyvd0iky"))))
-
 (define webkit-prebuilt-1.3.8
   (origin
     (method url-fetch)
@@ -373,8 +364,7 @@ prebuilt @code{bun-webkit} tarball that upstream downloads.")
           (delete 'configure)
           (add-before 'build 'prepare-webkit
             (lambda* (#:key inputs #:allow-other-keys)
-              (invoke "tar" "xf" (assoc-ref inputs "webkit-prebuilt"))
-              (setenv "JSC_BASE_DIR" (string-append (getcwd) "/bun-webkit"))
+              (setenv "JSC_BASE_DIR" (assoc-ref inputs "bun-webkit"))
               ;; Bun's release tarball lacks the mimalloc submodule headers.
               ;; Rehydrate them from Guix's mimalloc package.  The headers
               ;; live under a version-specific subdirectory (e.g.
@@ -427,352 +417,22 @@ prebuilt @code{bun-webkit} tarball that upstream downloads.")
                  "")
                 ;; Ensure local compatibility shims participate in final link.
                 (("src/deps/libmimalloc\\.o")
-                 "src/deps/libmimalloc.o src/deps/guix-link-compat.o"))
+                 "src/deps/libmimalloc.o src/deps/guix-link-compat.o")
+                ;; Upstream links the static ICU archives that its prebuilt
+                ;; JavaScriptCore tarball bundles.  Guix's icu4c ships shared
+                ;; libraries only, and JavaScriptCore is built against those.
+                (("\\$\\(LIB_ICU_PATH\\)/libicuuc\\.a \\$\\(LIB_ICU_PATH\\)/libicudata\\.a \\$\\(LIB_ICU_PATH\\)/libicui18n\\.a")
+                 "-licuuc -licudata -licui18n"))
 
-              ;; Bun 1.0.x expects older JavaScriptCore/WTF APIs.  Adapt a few
-              ;; generated headers/helpers to the newer WebKit snapshot used
-              ;; in this bootstrap stage.
-              (for-each
-               (lambda (file)
-                 (substitute* file
-                   (("const char\\*\\*")
-                    "ASCIILiteral*")))
-               (find-files "src/bun.js/bindings" "\\.(h|cpp)$"))
-              (for-each
-               (lambda (file)
-                 (substitute* file
-                   (("\\*reason = \"([^\"]*)\";" _ reason)
-                    (string-append "*reason = WTF::ASCIILiteral::fromLiteralUnsafe(\""
-                                   reason "\");"))))
-               (find-files "src/bun.js/bindings" "\\.(h|cpp)$"))
-
-              ;; WebKit now exposes text buffers through spans instead of raw
-              ;; characters8/characters16 pointers.
-              (for-each
-               (lambda (file)
-                 (substitute* file
-                   (("->characters8\\(\\)")
-                    "->span8().data()")
-                   (("->characters16\\(\\)")
-                    "->span16().data()")
-                   (("\\.characters8\\(\\)")
-                    ".span8().data()")
-                   (("\\.characters16\\(\\)")
-                    ".span16().data()")))
-               (find-files "src/bun.js/bindings" "\\.(h|cpp|gperf)$"))
-
-              ;; WebKit removed uncheckedAppend in favor of append.
-              (for-each
-               (lambda (file)
-                 (substitute* file
-                   (("uncheckedAppend")
-                    "append")))
-               (find-files "src/bun.js/bindings" "\\.(h|cpp)$"))
-
-              (substitute* "src/bun.js/bindings/ZigGeneratedClasses.h"
-                (("\\*reason = \"has pending activity\";")
-                 "*reason = WTF::ASCIILiteral::fromLiteralUnsafe(\"has pending activity\");"))
-
-              (substitute* "src/js/out/WebCoreJSBuiltins.h"
-                (("JSC::makeSource\\(StringImpl::createWithoutCopying\\(s_##name, length\\), \\{ \\}\\)")
-                 "JSC::makeSource(StringImpl::createWithoutCopying({reinterpret_cast<const LChar*>(s_##name), static_cast<size_t>(length)}), { }, JSC::SourceTaintedOrigin::Untainted)")
-                (("JSC::createBuiltinExecutable\\(m_vm, m_##name##Source, executableName, s_##name##ImplementationVisibility, s_##name##ConstructorKind, s_##name##ConstructAbility\\)")
-                 "JSC::createBuiltinExecutable(m_vm, m_##name##Source, executableName, s_##name##ImplementationVisibility, s_##name##ConstructorKind, s_##name##ConstructAbility, JSC::InlineAttribute::None)"))
-
-              (substitute* "src/bun.js/bindings/helpers.h"
-                (("JSC::Identifier::fromString\\(global->vm\\(\\), untag\\(str\\.ptr\\), str\\.len\\)")
-                 "JSC::Identifier::fromString(global->vm(), { untag(str.ptr), str.len })")
-                (("WTF::String::fromUTF8\\(untag\\(str\\.ptr\\), str\\.len\\)")
-                 "WTF::String::fromUTF8({ reinterpret_cast<const char*>(untag(str.ptr)), str.len })")
-                (("WTF::String::fromUTF8\\(&untag\\(str\\.ptr\\)\\[ptr\\.off\\], ptr\\.len\\)")
-                 "WTF::String::fromUTF8({ reinterpret_cast<const char*>(&untag(str.ptr)[ptr.off]), ptr.len })")
-                (("WTF::ExternalStringImpl::create\\(untag\\(str\\.ptr\\), str\\.len, untagVoid\\(str\\.ptr\\), free_global_string\\)")
-                 "WTF::ExternalStringImpl::create({ untag(str.ptr), str.len }, untagVoid(str.ptr), free_global_string)")
-                (("WTF::ExternalStringImpl::create\\([[:space:]]*reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len, untagVoid\\(str\\.ptr\\), free_global_string\\)")
-                 "WTF::ExternalStringImpl::create({ reinterpret_cast<const UChar*>(untag(str.ptr)), str.len }, untagVoid(str.ptr), free_global_string)")
-                (("WTF::StringImpl::createWithoutCopying\\(untag\\(str\\.ptr\\), str\\.len\\)")
-                 "WTF::StringImpl::createWithoutCopying({ untag(str.ptr), str.len })")
-                (("WTF::StringImpl::createWithoutCopying\\(reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len\\)")
-                 "WTF::StringImpl::createWithoutCopying({ reinterpret_cast<const UChar*>(untag(str.ptr)), str.len })")
-                (("WTF::StringImpl::createWithoutCopying\\([[:space:]]*reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len\\)")
-                 "WTF::StringImpl::createWithoutCopying({ reinterpret_cast<const UChar*>(untag(str.ptr)), str.len })")
-                (("WTF::StringImpl::createWithoutCopying\\(&untag\\(str\\.ptr\\)\\[ptr\\.off\\], ptr\\.len\\)")
-                 "WTF::StringImpl::createWithoutCopying({ &untag(str.ptr)[ptr.off], ptr.len })")
-                (("WTF::StringImpl::createWithoutCopying\\(&reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\)\\[ptr\\.off\\], ptr\\.len\\)")
-                 "WTF::StringImpl::createWithoutCopying({ &reinterpret_cast<const UChar*>(untag(str.ptr))[ptr.off], ptr.len })")
-                (("WTF::StringImpl::createWithoutCopying\\([[:space:]]*&reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\)\\[ptr\\.off\\], ptr\\.len\\)")
-                 "WTF::StringImpl::createWithoutCopying({ &reinterpret_cast<const UChar*>(untag(str.ptr))[ptr.off], ptr.len })")
-                (("WTF::StringImpl::create\\(&untag\\(str\\.ptr\\)\\[ptr\\.off\\], ptr\\.len\\)")
-                 "WTF::StringImpl::create({ &untag(str.ptr)[ptr.off], ptr.len })")
-                (("WTF::StringImpl::create\\(&reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\)\\[ptr\\.off\\], ptr\\.len\\)")
-                 "WTF::StringImpl::create({ &reinterpret_cast<const UChar*>(untag(str.ptr))[ptr.off], ptr.len })")
-                (("WTF::StringImpl::create\\([[:space:]]*&reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\)\\[ptr\\.off\\], ptr\\.len\\)")
-                 "WTF::StringImpl::create({ &reinterpret_cast<const UChar*>(untag(str.ptr))[ptr.off], ptr.len })")
-                (("reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len, untagVoid\\(str\\.ptr\\), free_global_string\\)\\)")
-                 "{ reinterpret_cast<const UChar*>(untag(str.ptr)), str.len }, untagVoid(str.ptr), free_global_string))")
-                (("reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len\\)\\)")
-                 "{ reinterpret_cast<const UChar*>(untag(str.ptr)), str.len }))")
-                (("&reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\)\\[ptr\\.off\\], ptr\\.len\\)\\)")
-                 "{ &reinterpret_cast<const UChar*>(untag(str.ptr))[ptr.off], ptr.len }))")
-                (("reinterpret_cast<const LChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len\\)\\)")
-                 "{ reinterpret_cast<const LChar*>(untag(str.ptr)), str.len }))")
-                (("str->is8Bit\\(\\) \\? str->characters8\\(\\) : taggedUTF16Ptr\\(str->characters16\\(\\)\\)")
-                 "str->is8Bit() ? str->span8().data() : taggedUTF16Ptr(str->span16().data())")
-                (("str\\.is8Bit\\(\\) \\? str\\.characters8\\(\\) : taggedUTF16Ptr\\(str\\.characters16\\(\\)\\)")
-                 "str.is8Bit() ? str.span8().data() : taggedUTF16Ptr(str.span16().data())")
-                (("WTF::StringView\\(untag\\(str\\.ptr\\), str\\.len\\)")
-                 "isTaggedUTF16Ptr(str.ptr) ? WTF::StringView({ reinterpret_cast<const UChar*>(untag(str.ptr)), str.len }) : WTF::StringView({ untag(str.ptr), str.len })")
-                (("AtomStringImpl::add\\(reinterpret_cast<const UChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len\\)")
-                 "AtomStringImpl::add({ reinterpret_cast<const UChar*>(untag(str.ptr)), str.len })")
-                (("AtomStringImpl::add\\([[:space:]]*reinterpret_cast<const LChar\\*>\\(untag\\(str\\.ptr\\)\\), str\\.len[[:space:]]*\\)")
-                 "AtomStringImpl::add({ reinterpret_cast<const LChar*>(untag(str.ptr)), str.len })"))
-
-              (substitute* "src/bun.js/bindings/BunDebugger.cpp"
-                (("WTF::LockHolder")
-                 "WTF::Locker"))
-              (substitute* "src/bun.js/bindings/JSCTaskScheduler.cpp"
-                (("LockHolder holder")
-                 "WTF::Locker holder"))
-              (substitute* "src/bun.js/bindings/BunInspector.cpp"
-                (("WTF::String::fromUTF8\\(message\\.data\\(\\), message\\.length\\(\\)\\)")
-                 "WTF::String::fromUTF8({ message.data(), message.length() })"))
-              (substitute* "src/bun.js/bindings/IDLTypes.h"
-                (("std::isnan\\(value\\)")
-                 "value.isNaN()"))
-              (substitute* "src/bun.js/bindings/BunObject.cpp"
-                (("resolvedString\\.characters16\\(\\)")
-                 "resolvedString.span16().data()")
-                (("resolvedString\\.characters8\\(\\)")
-                 "resolvedString.span8().data()"))
-              (substitute* "src/bun.js/bindings/JSBuffer.cpp"
-                (("view\\.characters8\\(\\)")
-                 "view.span8().data()")
-                (("view\\.characters16\\(\\)")
-                 "view.span16().data()"))
-              (substitute* "src/bun.js/bindings/JSStringDecoder.cpp"
-                (("WTF::String\\(u\"\\\\uFFFD\", 1\\)")
-                 "WTF::String({ u\"\\uFFFD\", 1 })"))
-              (substitute* "src/bun.js/bindings/Process.cpp"
-                (("WTF::String\\(Bun__githubURL, strlen\\(Bun__githubURL\\)\\)")
-                 "WTF::String({ Bun__githubURL, strlen(Bun__githubURL) })"))
-              (substitute* "src/bun.js/modules/BunJSCModule.h"
-                (("WTF::String timeZoneString\\(buffer\\.data\\(\\), buffer\\.size\\(\\)\\);")
-                 "WTF::String timeZoneString({ buffer.data(), buffer.size() });"))
-              (substitute* "src/bun.js/bindings/ZigGlobalObject.cpp"
-                (("#include \"JavaScriptCore/JSModuleNamespaceObject.h\"")
-                 "#include \"JavaScriptCore/JSModuleNamespaceObject.h\"\n#include \"JavaScriptCore/JSModuleNamespaceObjectInlines.h\"")
-                (("WTF::String::fromUTF8\\(raw\\.str, raw\\.len\\)")
-                 "WTF::String::fromUTF8({ raw.str, raw.len })")
-                (("frame\\.computeLineAndColumn\\(thisLine, thisColumn\\);")
-                 "auto lineColumn = frame.computeLineAndColumn();\n            thisLine = lineColumn.line;\n            thisColumn = lineColumn.column;")
-                (("WEBCORE_GENERATED_CONSTRUCTOR_GETTER\\(JSMessageChannel\\);\n")
-                 "")
-                (("WEBCORE_GENERATED_CONSTRUCTOR_SETTER\\(JSMessageChannel\\);\n")
-                 "")
-                (("PUT_WEBCORE_GENERATED_CONSTRUCTOR\\([^)]*JSMessageChannel[^)]*\\);")
-                 "")
-                (("WTF::StringImpl::copyCharacters\\(ptr, encodedString\\.span16\\(\\)\\.data\\(\\), length\\);")
-                 "WTF::StringImpl::copyCharacters(ptr, encodedString.span16());"))
-              (substitute* "src/bun.js/bindings/napi.cpp"
-                (("WTF::StringImpl::createWithoutCopying\\(utf8name, utf8Len\\)")
-                 "WTF::StringImpl::createWithoutCopying({ utf8name, utf8Len })")
-                (("charactersAreAllASCII\\(reinterpret_cast<const LChar\\*>\\(utf8name\\), utf8Len\\)")
-                 "charactersAreAllASCII(std::span<const LChar> { reinterpret_cast<const LChar*>(utf8name), utf8Len })")
-                (("charactersAreAllASCII\\(\\{ reinterpret_cast<const LChar\\*>\\(utf8name\\), utf8Len \\}\\)")
-                 "charactersAreAllASCII(std::span<const LChar> { reinterpret_cast<const LChar*>(utf8name), utf8Len })")
-                (("JSC::makeSource\\(sourceCodeBuilder\\.toString\\(\\), JSC::SourceOrigin\\(\\), keyString,")
-                 "JSC::makeSource(sourceCodeBuilder.toString(), JSC::SourceOrigin(), JSC::SourceTaintedOrigin::Untainted, keyString,")
-                (("WTF::String::fromUTF8\\(property\\.utf8name, len\\)")
-                 "WTF::String::fromUTF8({ property.utf8name, len })")
-                (("WTF::String::fromUTF8\\(utf8name, strlen\\(utf8name\\)\\)")
-                 "WTF::String::fromUTF8({ utf8name, strlen(utf8name) })")
-                (("WTF::String::fromUTF8\\(utf8name, length == NAPI_AUTO_LENGTH \\? strlen\\(utf8name\\) : length\\)")
-                 "WTF::String::fromUTF8({ utf8name, length == NAPI_AUTO_LENGTH ? strlen(utf8name) : length })")
-                (("WTF::String::fromUTF8\\(utf8description, length == NAPI_AUTO_LENGTH \\? strlen\\(utf8description\\) : length\\)")
-                 "WTF::String::fromUTF8({ utf8description, length == NAPI_AUTO_LENGTH ? strlen(utf8description) : length })")
-                (("WTF::String::fromUTF8\\(utf8name, length\\)")
-                 "WTF::String::fromUTF8({ utf8name, length })"))
-              (substitute* "src/bun.js/bindings/bindings.cpp"
-                (("WTF::StringImpl::createWithoutCopying\\(range_error_name, 10\\)")
-                 "WTF::StringImpl::createWithoutCopying({ range_error_name, 10 })")
-                (("WTF::StringImpl::createWithoutCopying\\(range_error_name, 9\\)")
-                 "WTF::StringImpl::createWithoutCopying({ range_error_name, 9 })")
-                (("StringImpl::createWithoutCopying\\(arg1, arg2\\)")
-                 "StringImpl::createWithoutCopying({ arg1, arg2 })")
-                (("WTF::String::fromUTF8\\(arg1, arg2\\)")
-                 "WTF::String::fromUTF8({ arg1, arg2 })")
-                (("WTF::String::fromUTF8\\(originUrlPtr, originURLLen\\)")
-                 "WTF::String::fromUTF8({ originUrlPtr, originURLLen })")
-                (("WTF::String::fromUTF8\\(referrerUrlPtr, referrerUrlLen\\)")
-                 "WTF::String::fromUTF8({ referrerUrlPtr, referrerUrlLen })")
-                (("WTF::String::fromUTF8\\(arg0->ptr, arg0->len\\)")
-                 "WTF::String::fromUTF8({ arg0->ptr, arg0->len })")
-                (("WTF::StringView\\(ptr, strlen\\(ptr\\)\\)")
-                 "WTF::StringView({ ptr, strlen(ptr) })")
-                (("StringImpl::copyCharacters\\(&buf\\[i\\], name\\.span16\\(\\)\\.data\\(\\), name\\.length\\(\\)\\);")
-                 "StringImpl::copyCharacters(&buf[i], name.span16());")
-                (("StringImpl::copyCharacters\\(&buf\\[i\\], value\\.span16\\(\\)\\.data\\(\\), value\\.length\\(\\)\\);")
-                 "StringImpl::copyCharacters(&buf[i], value.span16());")
-                (("StringView\\(reinterpret_cast<const char\\*>\\(header\\.name\\.ptr\\), header\\.name\\.len\\)")
-                 "StringView({ reinterpret_cast<const char*>(header.name.ptr), header.name.len })")
-                (("StringView\\(reinterpret_cast<const LChar\\*>\\(header\\.first\\.data\\(\\)\\), header\\.first\\.length\\(\\)\\)")
-                 "StringView({ reinterpret_cast<const LChar*>(header.first.data()), header.first.length() })")
-                (("src, JSC::SourceOrigin \\{ origin \\}, origin\\.fileSystemPath\\(\\),")
-                 "src, JSC::SourceOrigin { origin }, JSC::SourceTaintedOrigin::Untainted, origin.fileSystemPath(),")
-                (("WTF::AtomStringImpl::lookUp\\(reinterpret_cast<const UChar\\*>\\(untag\\(arg0->ptr\\)\\), arg0->len\\)")
-                 "WTF::AtomStringImpl::lookUp({ reinterpret_cast<const UChar*>(untag(arg0->ptr)), arg0->len })")
-                (("WTF::AtomStringImpl::lookUp\\(untag\\(arg0->ptr\\), arg0->len\\)")
-                 "WTF::AtomStringImpl::lookUp({ untag(arg0->ptr), arg0->len })")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const UChar\\*>\\(arg0\\), len, reinterpret_cast<void\\*>\\(const_cast<uint16_t\\*>\\(arg0\\)\\), free_global_string\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const UChar*>(arg0), len }, reinterpret_cast<void*>(const_cast<uint16_t*>(arg0)), free_global_string)")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const UChar\\*>\\(Zig::untag\\(str\\.ptr\\)\\), str\\.len, Zig::untagVoid\\(str\\.ptr\\), free_global_string\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const UChar*>(Zig::untag(str.ptr)), str.len }, Zig::untagVoid(str.ptr), free_global_string)")
-                (("ExternalStringImpl::create\\(Zig::untag\\(str\\.ptr\\), str\\.len, Zig::untagVoid\\(str\\.ptr\\), free_global_string\\)")
-                 "ExternalStringImpl::create({ Zig::untag(str.ptr), str.len }, Zig::untagVoid(str.ptr), free_global_string)")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const UChar\\*>\\(Zig::untag\\(str\\.ptr\\)\\), str\\.len, arg2, ArgFn3\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const UChar*>(Zig::untag(str.ptr)), str.len }, arg2, ArgFn3)")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const LChar\\*>\\(Zig::untag\\(str\\.ptr\\)\\), str\\.len, arg2, ArgFn3\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const LChar*>(Zig::untag(str.ptr)), str.len }, arg2, ArgFn3)")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const UChar\\*>\\(Zig::untag\\(str\\.ptr\\)\\), str\\.len, nullptr, ArgFn2\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const UChar*>(Zig::untag(str.ptr)), str.len }, nullptr, ArgFn2)")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const LChar\\*>\\(Zig::untag\\(str\\.ptr\\)\\), str\\.len, nullptr, ArgFn2\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const LChar*>(Zig::untag(str.ptr)), str.len }, nullptr, ArgFn2)")
-                (("m_codeBlock->unlinkedCodeBlock\\(\\)->expressionRangeForBytecodeIndex\\(")
-                 "auto expressionInfo = m_codeBlock->expressionInfoForBytecodeIndex(bytecodeOffset);")
-                (("bytecodeOffset, divotPoint, startOffset, endOffset, line, unusedColumn\\);")
-                 "startOffset = expressionInfo.startOffset;\n    endOffset = expressionInfo.endOffset;\n    divotPoint = expressionInfo.divot;\n    auto lineColumn = m_codeBlock->lineColumnForBytecodeIndex(bytecodeOffset);\n    line = lineColumn.line;\n    unusedColumn = lineColumn.column;"))
-              (substitute* "src/bun.js/bindings/sqlite/JSSQLStatement.cpp"
-                (("WTF::String::fromUTF8\\(name, len\\)")
-                 "WTF::String::fromUTF8({ name, len })")
-                (("WTF::String::fromUTF8\\(text, len\\)")
-                 "WTF::String::fromUTF8({ text, len })")
-                (("WTF::String::fromUTF8\\(string, length\\)")
-                 "WTF::String::fromUTF8({ string, length })"))
-              (substitute* "src/bun.js/bindings/ErrorStackTrace.cpp"
-                (("visitor->isWasmFrame\\(\\)")
-                 "visitor->codeType() == JSC::StackVisitor::Frame::Wasm")
-                (("m_codeBlock->unlinkedCodeBlock\\(\\)->expressionRangeForBytecodeIndex\\(bytecodeIndex, divotPoint, startOffset, endOffset, line, unusedColumn\\);")
-                 "auto expressionInfo = m_codeBlock->expressionInfoForBytecodeIndex(bytecodeIndex);\n    startOffset = expressionInfo.startOffset;\n    endOffset = expressionInfo.endOffset;\n    divotPoint = expressionInfo.divot;\n    auto lineColumn = m_codeBlock->lineColumnForBytecodeIndex(bytecodeIndex);\n    line = lineColumn.line;\n    unusedColumn = lineColumn.column;"))
-              (substitute* "src/bun.js/bindings/InternalModuleRegistry.cpp"
-                (("JSC::makeSource\\(SOURCE, origin, moduleName\\)")
-                 "JSC::makeSource(SOURCE, origin, JSC::SourceTaintedOrigin::Untainted, moduleName)")
-                (("ConstructAbility::CannotConstruct\\)")
-                 "ConstructAbility::CannotConstruct, JSC::InlineAttribute::None)"))
               ;; Newer libc++/libstdc++ combinations can exceed constexpr
               ;; evaluation limits on these very large generated literals.
               (substitute* "src/js/out/InternalModuleRegistryConstants.h"
                 (("static constexpr ASCIILiteral")
                  "static const ASCIILiteral"))
-              (substitute* "src/bun.js/bindings/BunString.cpp"
-                (("startsWith\\(bytes, length\\)")
-                 "startsWith({ bytes, length })")
-                (("createWithoutCopying\\(bytes, length\\)")
-                 "createWithoutCopying({ bytes, length })")
-                (("fromUTF8ReplacingInvalidSequences\\(reinterpret_cast<const LChar\\*>\\(bytes\\), length\\)")
-                 "fromUTF8ReplacingInvalidSequences({ reinterpret_cast<const LChar*>(bytes), length })")
-                (("StringImpl::create\\(bytes, length\\)")
-                 "StringImpl::create({ bytes, length })")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const LChar\\*>\\(bytes\\), length, ctx, callback\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const LChar*>(bytes), length }, ctx, callback)")
-                (("ExternalStringImpl::create\\(reinterpret_cast<const UChar\\*>\\(bytes\\), length, ctx, callback\\)")
-                 "ExternalStringImpl::create({ reinterpret_cast<const UChar*>(bytes), length }, ctx, callback)"))
+              ;; Newer libstdc++ no longer includes <cstdlib> transitively.
               (substitute* "src/bun.js/bindings/workaround-missing-symbols.cpp"
                 (("#include <errno.h>")
                  "#include <errno.h>\n#include <cstdlib>"))
-              (substitute* "src/bun.js/bindings/wtf-bindings.cpp"
-                (("WTF::parseDouble\\(string, length, \\*position\\)")
-                 "WTF::parseDouble(WTF::StringView({ string, length }), *position)")
-                (("WTF::StringImpl::copyCharacters\\(destination, source, length\\);")
-                 "WTF::StringImpl::copyCharacters(destination, { source, length });"))
-              (substitute* "src/bun.js/bindings/ZigSourceProvider.h"
-                ((": Base\\(sourceOrigin, WTFMove\\(sourceURL\\), String\\(\\), startPosition, sourceType\\)")
-                 ": Base(sourceOrigin, WTFMove(sourceURL), String(), JSC::SourceTaintedOrigin::Untainted, startPosition, sourceType)"))
-              (substitute* "src/bun.js/bindings/NodeVMScript.cpp"
-                (("options\\.filename, TextPosition\\(options\\.lineOffset, options\\.columnOffset\\)")
-                 "options.filename, JSC::SourceTaintedOrigin::Untainted, TextPosition(options.lineOffset, options.columnOffset)"))
-              (substitute* "src/bun.js/bindings/Path.cpp"
-                (("uncheckedAppend")
-                 "append"))
-              (substitute* "src/bun.js/bindings/Serialization.cpp"
-                (("Vector<uint8_t> vector\\(bytes, size\\);")
-                 "Vector<uint8_t> vector({ bytes, size });"))
-              (substitute* "src/bun.js/bindings/ZigGeneratedClasses.cpp"
-                (("vm\\.heap\\.reportExtraMemoryAllocated\\(Blob__estimatedSize\\(instance->wrapped\\(\\)\\)\\);")
-                 "vm.heap.reportExtraMemoryAllocated(instance, Blob__estimatedSize(instance->wrapped()));")
-                (("vm\\.heap\\.reportExtraMemoryAllocated\\(Blob__estimatedSize\\(ptr\\)\\);")
-                 "vm.heap.reportExtraMemoryAllocated(instance, Blob__estimatedSize(ptr));")
-                (("vm\\.heap\\.reportExtraMemoryAllocated\\(Request__estimatedSize\\(instance->wrapped\\(\\)\\)\\);")
-                 "vm.heap.reportExtraMemoryAllocated(instance, Request__estimatedSize(instance->wrapped()));")
-                (("vm\\.heap\\.reportExtraMemoryAllocated\\(Request__estimatedSize\\(ptr\\)\\);")
-                 "vm.heap.reportExtraMemoryAllocated(instance, Request__estimatedSize(ptr));")
-                (("vm\\.heap\\.reportExtraMemoryAllocated\\(Response__estimatedSize\\(instance->wrapped\\(\\)\\)\\);")
-                 "vm.heap.reportExtraMemoryAllocated(instance, Response__estimatedSize(instance->wrapped()));")
-                (("vm\\.heap\\.reportExtraMemoryAllocated\\(Response__estimatedSize\\(ptr\\)\\);")
-                 "vm.heap.reportExtraMemoryAllocated(instance, Response__estimatedSize(ptr));"))
-              (substitute* (list "src/bun.js/bindings/webcore/HTTPHeaderNames.gperf"
-                                 "src/bun.js/bindings/webcore/HTTPHeaderNames.cpp")
-                (("return StringView \\{ reinterpret_cast<const LChar\\*>\\(name\\.name\\), static_cast<unsigned>\\(name\\.length\\) \\};")
-                 "return StringView(std::span<const LChar> { reinterpret_cast<const LChar*>(name.name), static_cast<unsigned>(name.length) });"))
-              (substitute* "src/bun.js/bindings/webcore/JSAbortSignalCustom.cpp"
-                (("\\*reason = \"EventTarget firing event listeners\";")
-                 "*reason = WTF::ASCIILiteral::fromLiteralUnsafe(\"EventTarget firing event listeners\");"))
-              (substitute* "src/bun.js/bindings/webcore/JSBroadcastChannel.cpp"
-                (("\\*reason = \"ActiveDOMObject with pending activity\";")
-                 "*reason = WTF::ASCIILiteral::fromLiteralUnsafe(\"ActiveDOMObject with pending activity\");"))
-              (substitute* "src/bun.js/bindings/webcore/JSFetchHeaders.cpp"
-                (("globalObject\\(\\)->vm\\(\\)\\.heap\\.reportExtraMemoryAllocated\\(m_memoryCost\\);")
-                 "globalObject()->vm().heap.reportExtraMemoryAllocated(this, m_memoryCost);"))
-              (substitute* "src/bun.js/bindings/webcore/JSMessageEvent.cpp"
-                (("vm\\.heap\\.reportExtraMemoryAllocated\\(wrapped\\(\\)\\.memoryCost\\(\\)\\);")
-                 "vm.heap.reportExtraMemoryAllocated(this, wrapped().memoryCost());"))
-              (substitute* "src/bun.js/bindings/webcore/WebSocket.cpp"
-                (("builder\\.append\\(\"\\\\+\"\\);")
-                 "builder.append(\"\\\\\\\\\"_s);")
-                (("builder\\.append\\(separator\\);")
-                 "builder.append(WTF::ASCIILiteral::fromLiteralUnsafe(separator));")
-                (("didReceiveBinaryData\\(\"message\"_s, \\{ bytes, len \\}\\);")
-                 "didReceiveBinaryData(\"message\"_s, Vector<uint8_t>(std::span<const uint8_t> { bytes, len }));")
-                (("didReceiveBinaryData\\(\"ping\"_s, \\{ bytes, len \\}\\);")
-                 "didReceiveBinaryData(\"ping\"_s, Vector<uint8_t>(std::span<const uint8_t> { bytes, len }));")
-                (("didReceiveBinaryData\\(\"pong\"_s, \\{ bytes, len \\}\\);")
-                 "didReceiveBinaryData(\"pong\"_s, Vector<uint8_t>(std::span<const uint8_t> { bytes, len }));"))
-              (substitute* "src/bun.js/bindings/webcore/HTTPHeaderMap.cpp"
-                (("findHTTPHeaderName\\(StringView\\(nameCharacters, length\\), headerName\\)")
-                 "findHTTPHeaderName(StringView({ nameCharacters, length }), headerName)")
-                (("setUncommonHeader\\(String\\(nameCharacters, length\\), value\\);")
-                 "setUncommonHeader(String({ nameCharacters, length }), value);"))
-              (substitute* "src/bun.js/bindings/webcore/HTTPParsers.cpp"
-                (("return String\\(p, length\\);")
-                 "return String::fromUTF8({ reinterpret_cast<const char*>(p), length });")
-                (("StringView\\(p, length\\)")
-                 "StringView({ reinterpret_cast<const char*>(p), length })")
-                (("parseDateFromNullTerminatedCharacters\\(value\\.utf8\\(\\)\\.data\\(\\)\\)")
-                 "WTF::parseDate(value.span8())")
-                (("nameStr = StringView\\(namePtr, nameSize\\);")
-                 "nameStr = StringView({ reinterpret_cast<const char*>(namePtr), nameSize });")
-                (("String::fromUTF8\\(value\\.data\\(\\), value\\.size\\(\\)\\)")
-                 "String::fromUTF8({ reinterpret_cast<const char*>(value.data()), value.size() })")
-                (("body\\.append\\(data, length\\);")
-                 "body.append(std::span<const uint8_t> { data, length });")
-                (("body\\.append\\(\\{ data, length \\}\\);")
-                 "body.append(std::span<const uint8_t> { data, length });"))
-              (substitute* "src/bun.js/bindings/webcore/SharedBuffer.cpp"
-                (("combinedData\\.append\\(segment\\.segment->data\\(\\), segment\\.segment->size\\(\\)\\);")
-                 "combinedData.append(std::span<const uint8_t> { segment.segment->data(), segment.segment->size() });")
-                (("combinedData\\.append\\(element->segment->data\\(\\) \\+ offsetInSegment, element->segment->size\\(\\) - offsetInSegment\\);")
-                 "combinedData.append(std::span<const uint8_t> { element->segment->data() + offsetInSegment, element->segment->size() - offsetInSegment });")
-                (("combinedData\\.append\\(element->segment->data\\(\\), canCopy\\);")
-                 "combinedData.append(std::span<const uint8_t> { element->segment->data(), canCopy });")
-                (("DataSegment::create\\(Vector \\{ data, length \\}\\)")
-                 "DataSegment::create(Vector<uint8_t>(std::span<const uint8_t> { data, length }))")
-                (("data\\.append\\(currentSegment->segment->data\\(\\) \\+ offsetInSegment, availableInSegment\\);")
-                 "data.append(std::span<const uint8_t> { currentSegment->segment->data() + offsetInSegment, availableInSegment });")
-                (("data\\.append\\(currentSegment->segment->data\\(\\), lengthInSegment\\);")
-                 "data.append(std::span<const uint8_t> { currentSegment->segment->data(), lengthInSegment });")
-                (("if \\(!WTF::Unicode::convertLatin1ToUTF8\\(&d, d \\+ length, &p, p \\+ buffer\\.size\\(\\)\\)\\)")
-                 "if (([&] { auto conversionResult = WTF::Unicode::convert(std::span<const LChar> { d, length }, std::span<char8_t> { reinterpret_cast<char8_t*>(p), buffer.size() }); p = reinterpret_cast<char*>(conversionResult.buffer.data() + conversionResult.buffer.size()); return conversionResult.code != WTF::Unicode::ConversionResultCode::Success; })())")
-                (("if \\(WTF::Unicode::convertUTF16ToUTF8\\(&d, d \\+ length, &p, p \\+ buffer\\.size\\(\\)\\) != WTF::Unicode::ConversionResult::Success\\)")
-                 "if (([&] { auto conversionResult = WTF::Unicode::convert(std::span<const char16_t> { reinterpret_cast<const char16_t*>(d), length }, std::span<char8_t> { reinterpret_cast<char8_t*>(p), buffer.size() }); p = reinterpret_cast<char*>(conversionResult.buffer.data() + conversionResult.buffer.size()); return conversionResult.code != WTF::Unicode::ConversionResultCode::Success; })())"))
               (substitute* (list "src/bun.js/bindings/webcrypto/CryptoAlgorithmAesCbcCfbParams.h"
                                  "src/bun.js/bindings/webcrypto/CryptoAlgorithmAesCtrParams.h"
                                  "src/bun.js/bindings/webcrypto/CryptoAlgorithmAesGcmParams.h"
@@ -831,29 +491,7 @@ prebuilt @code{bun-webkit} tarball that upstream downloads.")
                 (("WorkQueue::create\\(\"com\\.apple\\.WebKit\\.CryptoQueue\"\\)")
                  "WorkQueue::create(WTF::ASCIILiteral::fromLiteralUnsafe(\"com.apple.WebKit.CryptoQueue\"))")
                 (("String jwkString\\(bytes\\.data\\(\\), bytes\\.size\\(\\)\\);")
-                 "String jwkString = String::fromUTF8({ reinterpret_cast<const char*>(bytes.data()), bytes.size() });"))
-              (substitute* "src/bun.js/bindings/webcore/SerializedScriptValue.cpp"
-                (("buffer\\.append\\(reinterpret_cast<uint8_t\\*>\\(&value\\), sizeof\\(value\\)\\);")
-                 "buffer.append(std::span<const uint8_t> { reinterpret_cast<uint8_t*>(&value), sizeof(value) });")
-                (("buffer\\.append\\(reinterpret_cast<const uint8_t\\*>\\(values\\), length \\* sizeof\\(T\\)\\);")
-                 "buffer.append(std::span<const uint8_t> { reinterpret_cast<const uint8_t*>(values), length * sizeof(T) });")
-                (("buffer\\.append\\(values, length\\);")
-                 "buffer.append(std::span<const uint8_t> { values, length });")
-                (("str = String \\{ ptr, length \\};")
-                 "str = String({ reinterpret_cast<const LChar*>(ptr), length });")
-                (("str = String\\(reinterpret_cast<const UChar\\*>\\(ptr\\), length\\);")
-                 "str = String({ reinterpret_cast<const UChar*>(ptr), length });")
-                (("str = Identifier::fromString\\(vm, reinterpret_cast<const LChar\\*>\\(ptr\\), length\\);")
-                 "str = Identifier::fromString(vm, { reinterpret_cast<const LChar*>(ptr), length });")
-                (("str = Identifier::fromString\\(vm, reinterpret_cast<const UChar\\*>\\(ptr\\), length\\);")
-                 "str = Identifier::fromString(vm, { reinterpret_cast<const UChar*>(ptr), length });")
-                (("result\\.append\\(m_ptr, size\\);")
-                 "result.append(std::span<const uint8_t> { m_ptr, size });")
-                (("ErrorInstance::create\\(m_lexicalGlobalObject, WTFMove\\(message\\), toErrorType\\(serializedErrorType\\), line, column, WTFMove\\(sourceURL\\), WTFMove\\(stackString\\)\\)")
-                 "ErrorInstance::create(m_lexicalGlobalObject, WTFMove(message), toErrorType(serializedErrorType), JSC::LineColumn { line, column }, WTFMove(sourceURL), WTFMove(stackString))"))
-              (substitute* "src/bun.js/bindings/webcore/JSDOMConvertSequences.h"
-                (("uncheckedAppend")
-                 "append"))))
+                 "String jwkString = String::fromUTF8({ reinterpret_cast<const char*>(bytes.data()), bytes.size() });"))))
           (replace 'build
             (lambda* (#:key inputs #:allow-other-keys)
               (let ((esbuild (search-input-file inputs "/bin/esbuild")))
@@ -1867,6 +1505,9 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
                        (assoc-ref inputs "openssl") "/lib:"
                        (assoc-ref inputs "c-ares") "/lib:"
                        (assoc-ref inputs "zstd") "/lib:"
+                       ;; JavaScriptCore is built against Guix's shared ICU,
+                       ;; so bun loads it at run time.
+                       (assoc-ref inputs "icu4c") "/lib:"
                        (assoc-ref inputs "gcc-lib") "/lib"))
                      (interpreter
                       (search-input-file inputs "/lib/ld-linux-x86-64.so.2")))
@@ -1880,7 +1521,7 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
                         bun)
                 (symlink "bun" (string-append bin "/bunx"))))))))
     (native-inputs
-     `(("webkit-prebuilt" ,webkit-prebuilt-stage0)
+     `(("bun-webkit" ,bun-webkit)
        ("cmake-minimal" ,cmake-minimal)
        ("ninja" ,ninja)
        ("pkg-config" ,pkg-config)
@@ -1907,7 +1548,7 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
        ("which" ,which)
        ("esbuild" ,esbuild)))
     (inputs
-     (list glibc))
+     (list glibc icu4c))
     (supported-systems '("x86_64-linux"))
     (home-page "https://bun.sh")
     (synopsis "Stage0 Bun built from source")
