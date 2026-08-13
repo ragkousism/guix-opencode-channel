@@ -671,3 +671,77 @@ guix shell -L /home/manolis/repos/guix-opencode-channel opencode -- opencode --h
 - Continue Phase 2/3 `bun-build-system` work by extracting one `restore-node-modules` step into generic helpers.
 - If improving source purity, remove `bun-schema-generator` once Bun `__using` is available in `bun-from-source`.
 - Update this document with any post-success cleanup and verification logs.
+
+## RESOLVED (2026-08-13): hang fixed, and the blobs are going away
+
+### The hang
+
+Confirmed and fixed.  The recipe linked Bun 1.0.0 against a WebKit years
+newer than it targets, bridged by ~250 `substitute*` calls.  Those made it
+compile without making it conform; the binary spun in
+`WTF::AtomStringImpl::addLiteral` while building the JS global object, so
+anything that had to execute JavaScript hung while `--version`, `--help` and
+`bun build` worked.  Building the JavaScriptCore Bun 1.0.0 expects, and
+deleting the adaptation layer, fixes it: `bun run hello.js` prints in ~12ms.
+
+Two of the removed substitutions were *not* WebKit-related and had to be kept
+(a `<cstdlib>` include and a constexpr-limit workaround).  Guix's
+`substitute*` does not fail when a pattern misses, so the rest were removed
+deliberately rather than left to rot.
+
+### No more prebuilt binaries in the stage0 chain
+
+`bun-stage0`'s closure now contains only Bun's source tarball, a WebKit git
+checkout, and Guix's own icu4c.
+
+- The prebuilt Bun release is gone; stage0 bootstraps the next stage itself.
+  It only ever existed because stage0 could not run JavaScript.
+- `bun-webkit` is built from source (`make-bun-webkit`), as a static JSCOnly
+  port configured like the fork's own Dockerfile.  GitHub refuses to generate
+  archives for that repo (~12GB), but a `--depth 1` fetch of the pinned commit
+  is ~1.2GiB, which `git-fetch` does by default.
+- The prebuilt tarball bundled the *build host's* Debian ICU 67 archives.
+  That, and nothing else, is why ICU 67 headers had to be fetched to match
+  `u_strlen_67`.  With ICU coming from Guix the pin is gone.
+
+Revisions come from the prebuilt tarball's `package.json`, or from the
+`autobuild-<sha>` release tag, which encodes the commit.
+
+| revision   | for       | toolchain | note                        |
+|------------|-----------|-----------|-----------------------------|
+| `48c1316`  | Bun 1.0.0 | gcc       | built, runs JS              |
+| `9e3b60e4` | Bun 1.2.0 | gcc       | built                       |
+| `9a2cc42`  | Bun 1.3.8 | clang     | `USE_BUN_EVENT_LOOP=ON`     |
+
+`RunLoopBun.cpp` only compiles with clang, so revisions enabling Bun's run
+loop must use it -- matching upstream's toolchain, since deviating from
+upstream's pairing is what caused the hang in the first place.
+
+Bun consumes only `include/` and `lib/`, so WebKit's own build helpers under
+`bin/` are deliberately not installed (they would fail `validate-runpath`).
+
+### Remaining: the bootstrap ladder
+
+`bun-from-source` (1.3.8) does not yet build, because Bun 1.0.0 cannot run
+Bun 1.3.8's code generators.  Four differences, in the order they appear:
+`Bun.Glob` and `Bun.stringWidth` do not exist in 1.0.0; `--keep-names` is
+unsupported and mis-parses into a misleading "specify --outdir" error even
+though `--outdir` was passed; and `Bun.write` does not create parent
+directories.  Past all four it hits a genuine segfault in 1.0.0's parser
+(`DotDefine` lookup under `Bun.Transpiler.scan`), which cannot be shimmed.
+
+An intermediate rung avoids this.  Under stage0, Bun 1.1.0 and 1.2.0
+code generation both run to completion needing only the `Bun.write` shim --
+no `Bun.Glob`, no `--keep-names`, no segfault.  So the ladder is
+1.0.0 -> 1.2.0 -> 1.3.8.  opencode pins `bun@1.3.8` in its `packageManager`
+field, so the ladder does have to reach 1.3.8.
+
+Next step: parameterise `bun-from-source` over version, WebKit and bootstrap
+Bun (as `make-bun-webkit` is), then build the 1.2.0 and 1.3.8 rungs.
+
+### Still outstanding
+
+- `#:strip-binaries? #f` and `STRIP=true` in `bun-stage0` remain from
+  debugging the hang and should be reverted now that it is fixed.
+- `webkit-prebuilt-1.3.8` is still referenced by `bun-from-source`;
+  `bun-webkit-for-1.3.8` is built and ready to replace it.
