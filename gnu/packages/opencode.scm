@@ -105,15 +105,6 @@
                      #~(begin
                          (mkdir #$output)))))
 
-(define webkit-prebuilt-1.3.8
-  (origin
-    (method url-fetch)
-    (uri
-     "https://github.com/oven-sh/WebKit/releases/download/autobuild-9a2cc42ae1bf693a0fd0ceb9b1d7d965d9cfd3ea/bun-webkit-linux-amd64.tar.gz")
-    (sha256
-     (base32
-      "1h0ajrpn3ybchggri5ypgd17mk5d4s1a6bbpn1cy14i940922y03"))))
-
 (define lezer-common-source
   (origin
     (method url-fetch)
@@ -153,6 +144,84 @@
     (sha256
      (base32
       "01yx2n8qxf09xp8f70f5wbgxx17plwxsdhgqcznb0pfdfzs9nph4"))))
+
+;; Bun's build clones these pinned repositories into vendor/ while building,
+;; which a build container cannot do.  Fetch them as ordinary origins instead;
+;; see the 'unpack-vendored-sources phase for how the clone step is satisfied.
+;; The commits are the ones registered in Bun's cmake/targets/Clone*.cmake and
+;; Build*.cmake files.
+(define %bun-vendored-sources
+  ;; (DIRECTORY REPOSITORY COMMIT HASH)
+  '(("boringssl" "oven-sh/boringssl"
+     "4f4f5ef8ebc6e23cbf393428f0ab1b526773f7ac"
+     "10gydn7c9skiv8qv1qij28k20ajbhzp8r7ki3g3650f0gq6bix4x")
+    ("picohttpparser" "h2o/picohttpparser"
+     "066d2b1e9ab820703db0837a7255d92d30f0c9f5"
+     "1vi32dfgzzrmz6mcxjjgfpaaizpjbhykkp5mll2pwzswdymz4zv3")
+    ("cares" "c-ares/c-ares"
+     "3ac47ee46edd8ea40370222f91613fc16c434853"
+     "1f74lb8d4z07vy7zi9pg579qfqkkgsglvnl7wi24mbk6ndn1354c")
+    ("hdrhistogram" "HdrHistogram/HdrHistogram_c"
+     "be60a9987ee48d0abf0d7b6a175bad8d6c1585d1"
+     "1jfzbiiiigc6h7v8amzca7wx5mdayq58i206wnnpafihwmd5w741")
+    ("highway" "google/highway"
+     "ac0d5d297b13ab1b89f48484fc7911082d76a93f"
+     "19yydisrlii439w73bf9yzb8sij7b23sih1r1pzi811anvs1da57")
+    ("libarchive" "libarchive/libarchive"
+     "9525f90ca4bd14c7b335e2f8c84a4607b0af6bdf"
+     "0b0h9a6vm4m5mlq7ikvz2jrq6py17i5g1d3xjifxpjx3b2mvjkcl")
+    ("libdeflate" "ebiggers/libdeflate"
+     "c8c56a20f8f621e6a966b716b31f1dedab6a41e3"
+     "10ga3mkfiabhjwibis1zqn5kqzjhixcf7jc9idfj9qgkvdmw0p0y")
+    ("lolhtml" "cloudflare/lol-html"
+     "e9e16dca48dd4a8ffbc77642bc4be60407585f11"
+     "064dd8a8jfn0rf7smpflp9ic67i69dfql8nr30vng53h67zkcav2")
+    ("lshpack" "litespeedtech/ls-hpack"
+     "8905c024b6d052f083a3d11d0a169b3c2735c8a1"
+     "0wzr1q9yzmjisvrm5nxsxq8157ji70wx5awfyd1mbcdi3f8bzn07")
+    ("mimalloc" "oven-sh/mimalloc"
+     "ffa38ab8ac914f9eb7af75c1f8ad457643dc14f2"
+     "16fa8zp5n8y6gz5i2l90ihkppmsif9lpw5y5wfwfgrx4xg0s0f4w")
+    ("tinycc" "oven-sh/tinycc"
+     "12882eee073cfe5c7621bcfadf679e1372d4537b"
+     "1aphjvnck3ckw4ixnpkx6wscsk81j9m2p3kfqnchmadzrdglhl3b")
+    ("zlib" "cloudflare/zlib"
+     "886098f3f339617b4243b286f5ed364b9989e245"
+     "1fyrdqzplzykz63haa2yxj8rrsy9aj7yhzgqaaprd1ihz2fl9gql")
+    ("zstd" "facebook/zstd"
+     "f8745da6ff1ad1e7bab384bd1f9d742439278e99"
+     "0b55bvl4jn3lzl03llfjq2sga3skjmrz4d9w22wn2pmjrzqd22sb")
+    ("libuv" "libuv/libuv"
+     "f3ce527ea940d926c40878ba5de219640c362811"
+     "1kyhfj2hsfs9k79qxvg3qqp04dbw896j4zip9v4ag1max18hs126")))
+
+;; Brotli is registered by tag rather than by commit, so its reference marker
+;; and download URL take a different shape from the entries above.
+(define %bun-vendored-brotli-tag "v1.1.0")
+
+(define bun-vendored-brotli
+  (origin
+    (method url-fetch)
+    (uri (string-append "https://github.com/google/brotli/archive/refs/tags/"
+                        %bun-vendored-brotli-tag ".tar.gz"))
+    (file-name (string-append "bun-vendor-brotli-"
+                              %bun-vendored-brotli-tag ".tar.gz"))
+    (sha256
+     (base32 "1zqkxacqb89pi1vzdvcplfmqyfgmf4bkfrfi98zq12s2575ac877"))))
+
+(define (bun-vendored-source entry)
+  "Return an origin for ENTRY, one element of %bun-vendored-sources."
+  (let ((name (car entry))
+        (repository (cadr entry))
+        (commit (caddr entry))
+        (hash (cadddr entry)))
+    (origin
+      (method url-fetch)
+      (uri (string-append "https://github.com/" repository
+                          "/archive/" commit ".tar.gz"))
+      (file-name (string-append "bun-vendor-" name "-"
+                                (string-take commit 7) ".tar.gz"))
+      (sha256 (base32 hash)))))
 
 ;; Bun does not link against a stock JavaScriptCore: it uses its own WebKit
 ;; fork, built as a static JSCOnly port with Bun-specific additions enabled.
@@ -252,6 +321,16 @@ revision expects differ, hence EXTRA-CONFIGURE-FLAGS."
                               (install-file header jsc-include))
                             (find-files "JavaScriptCore/DerivedSources"
                                         "\\.h$")))
+                ;; Bun's SetupWebKit.cmake accepts a pre-supplied WebKit only
+                ;; if this file is present and names the expected revision;
+                ;; otherwise it tries to download the release tarball.
+                (call-with-output-file (string-append #$output
+                                                      "/package.json")
+                  (lambda (port)
+                    (display (string-append
+                              "{ \"name\": \"bun-webkit\", \"version\": \"0.0.1-"
+                              #$revision "\" }\n")
+                             port)))
                 ;; Bun's build runs these generator scripts out of the JSC
                 ;; source tree.
                 (let ((source (assoc-ref inputs "source"))
@@ -347,9 +426,6 @@ prebuilt @code{bun-webkit} tarball that upstream downloads.")
     (arguments
      (list
       #:tests? #f
-      ;; Temporary, for diagnosing the JS-execution hang: keep .symtab so
-      ;; the spinning stack can be symbolized.
-      #:strip-binaries? #f
       #:modules '((guix build gnu-build-system)
                   (guix build utils)
                   (guix build bun-build-system))
@@ -1486,13 +1562,8 @@ GUIX_WEAK void SSL_CTX_set_custom_verify(SSL_CTX *ctx, int mode, void *cb)\n\
                 (invoke "make" "picohttp")
                 (invoke "make" "uws")
                 (let ((cpus (or (getenv "NIX_BUILD_CORES") "1")))
-                  ;; Temporary, for diagnosing the JS-execution hang: the
-                  ;; `release-only' target strips the binary itself, which
-                  ;; defeats #:strip-binaries? #f.  A command-line variable
-                  ;; overrides the Makefile's own STRIP assignment.
                   (invoke "make" "release-only"
-                          (string-append "CPUS=" cpus)
-                          "STRIP=true")))))
+                          (string-append "CPUS=" cpus))))))
           (replace 'install
             (lambda* (#:key inputs outputs #:allow-other-keys)
               (let* ((out (assoc-ref outputs "out"))
@@ -1959,35 +2030,138 @@ newer Bun releases.")
                 (apply-patch "vendor/zlib" "patches/zlib/deflate.h.patch")
                 (apply-patch "vendor/zlib" "patches/zlib/ucm.cmake.patch"))))
           (add-before 'build 'provide-webkit
-            (lambda _
+            (lambda* (#:key inputs #:allow-other-keys)
               (let* ((cache (string-append (getcwd) "/build/release/cache"))
-                     (webkit (string-append cache "/webkit-9a2cc42ae1bf693a"))
-                     (extracted (string-append cache "/bun-webkit")))
+                     (webkit (string-append cache "/webkit-9a2cc42ae1bf693a")))
                 (mkdir-p cache)
-                (invoke "tar" "xf" #$webkit-prebuilt-1.3.8 "-C" cache)
-                (when (file-exists? webkit)
-                  (delete-file-recursively webkit))
-                (rename-file extracted webkit)
+                ;; A header below is patched in place, so this cannot be a
+                ;; symlink into the read-only store.
+                (copy-recursively (assoc-ref inputs "bun-webkit") webkit)
+                (for-each (lambda (file) (chmod file #o644))
+                          (find-files webkit "\\.h$"))
                 ;; Clang in C++23 mode no longer resolves these C math symbols
-                ;; unqualified in this prebuilt header.
+                ;; unqualified in this header.
                 (substitute* (string-append
                               webkit
                               "/include/JavaScriptCore/JSCJSValueInlines.h")
                   (("return trunc\\(toNumber\\(globalObject\\) \\+ 0\\.0\\);")
                    "return std::trunc(toNumber(globalObject) + 0.0);")
                   (("return isnan\\(d\\) \\? 0\\.0 : trunc\\(d\\) \\+ 0\\.0;")
-                   "return std::isnan(d) ? 0.0 : std::trunc(d) + 0.0;")))))
+                   "return std::isnan(d) ? 0.0 : std::trunc(d) + 0.0;")))
+              ;; Upstream links the static ICU archives that its prebuilt
+              ;; JavaScriptCore tarball bundles from the build host.  Guix's
+              ;; icu4c ships shared libraries only, and JavaScriptCore is
+              ;; built against those.
+              (substitute* "cmake/targets/BuildBun.cmake"
+                (("\\$\\{WEBKIT_LIB_PATH\\}/libicudata\\.a") "icudata")
+                (("\\$\\{WEBKIT_LIB_PATH\\}/libicui18n\\.a") "icui18n")
+                (("\\$\\{WEBKIT_LIB_PATH\\}/libicuuc\\.a") "icuuc"))))
+          ;; Bun's CMake registers a clone step per vendored dependency whose
+          ;; declared output is vendor/NAME/.ref.  Unpacking the sources and
+          ;; writing that marker leaves those steps with nothing to do, which
+          ;; is what keeps the build from reaching for the network.
+          ;; Must precede 'prepare-offline-tree, which patches these trees.
+          (add-before 'prepare-offline-tree 'unpack-vendored-sources
+            (lambda* (#:key inputs #:allow-other-keys)
+              (for-each
+               (lambda (entry)
+                 (let* ((name (car entry))
+                        (commit (cadr entry))
+                        (directory (string-append "vendor/" name)))
+                   (mkdir-p directory)
+                   (invoke "tar" "xf"
+                           (assoc-ref inputs (string-append "vendor-" name))
+                           "-C" directory "--strip-components=1")
+                   (call-with-output-file (string-append directory "/.ref")
+                     (lambda (port) (display commit port)))))
+               '#$(map (lambda (entry)
+                         (list (car entry) (caddr entry)))
+                       %bun-vendored-sources))
+              ;; Brotli is pinned by tag, so its marker holds a ref name.
+              (let ((directory "vendor/brotli"))
+                (mkdir-p directory)
+                (invoke "tar" "xf" (assoc-ref inputs "vendor-brotli")
+                        "-C" directory "--strip-components=1")
+                (call-with-output-file (string-append directory "/.ref")
+                  (lambda (port)
+                    (display #$(string-append "refs/tags/"
+                                              %bun-vendored-brotli-tag)
+                             port))))))
+          ;; Bun 1.3.8's code generators use a few runtime APIs that the
+          ;; source-built stage0 Bun (1.0.0) predates, and pass a bundler flag
+          ;; it does not know.  Shim the APIs and drop the flag.
+          (add-before 'build 'adapt-codegen-to-stage0
+            (lambda* (#:key inputs #:allow-other-keys)
+              ;; Unknown to 1.0.0's CLI, where it derails option parsing into
+              ;; a misleading "specify --outdir" error.  Only meaningful
+              ;; alongside identifier minification, which is not enabled here.
+              (substitute* "src/codegen/bundle-modules.ts"
+                (("\\[\"--minify-syntax\", \"--keep-names\"\\]")
+                 "[\"--minify-syntax\"]"))
+              (let* ((helpers (string-append (getcwd) "/.guix-bun"))
+                     (shims (string-append helpers "/shims.js"))
+                     (wrapper (string-append helpers "/bun")))
+                (mkdir-p helpers)
+                (call-with-output-file shims
+                  (lambda (port)
+                    (display "\
+import { readdirSync, mkdirSync } from \"fs\";
+import { dirname, basename, join } from \"path\";
+
+if (typeof Bun.Glob === \"undefined\") {
+  Bun.Glob = class Glob {
+    constructor(pattern) { this.pattern = pattern; }
+    *scanSync() {
+      const directory = dirname(this.pattern);
+      const rx = new RegExp(\"^\" + basename(this.pattern)
+        .replace(/[.+^${}()|[\\]\\\\]/g, \"\\\\$&\")
+        .replace(/\\*/g, \".*\")
+        .replace(/\\?/g, \".\") + \"$\");
+      let entries;
+      try { entries = readdirSync(directory); } catch { return; }
+      for (const entry of entries.sort())
+        if (rx.test(entry)) yield join(directory, entry);
+    }
+    scan() { return this.scanSync(); }
+  };
+}
+
+if (typeof Bun.stringWidth === \"undefined\")
+  Bun.stringWidth = s => String(s).replace(/\\x1b\\[[0-9;]*m/g, \"\").length;
+
+// Bun.write gained implicit parent-directory creation after 1.0.0.
+{
+  const write = Bun.write;
+  Bun.write = function (destination, ...rest) {
+    if (typeof destination === \"string\")
+      try { mkdirSync(dirname(destination), { recursive: true }); } catch {}
+    return write.call(this, destination, ...rest);
+  };
+}
+" port)))
+                ;; CMake resolves BUN_EXECUTABLE from PATH, so the shims have
+                ;; to travel with the executable rather than the command line.
+                (call-with-output-file wrapper
+                  (lambda (port)
+                    ;; There is no /bin/sh in the build container, and this
+                    ;; file is created after the shebang-patching phases.
+                    (display (string-append
+                              "#!" (which "bash") "\nexec "
+                              (assoc-ref inputs "bun-stage0")
+                              "/bin/bun --preload " shims " \"$@\"\n")
+                             port)))
+                (chmod wrapper #o755)
+                (setenv "PATH"
+                        (string-append helpers ":" (getenv "PATH"))))))
           (replace 'build
             (lambda* (#:key inputs #:allow-other-keys)
               (setenv "HOME" (getcwd))
               (setenv "BUN_DEBUG_QUIET_LOGS" "1")
               (setenv "CARGO_NET_OFFLINE" "true")
-              ;; Run build-time codegen with the source-built stage0 Bun, so
-              ;; that no prebuilt Bun binary takes part in the build.
-              (setenv "PATH"
-                      (string-append (assoc-ref inputs "bun-stage0")
-                                     "/bin:"
-                                     (getenv "PATH")))
+              ;; Codegen runs on the source-built stage0 Bun, reached through
+              ;; the shim wrapper that 'adapt-codegen-to-stage0 puts on PATH.
+              ;; Do not prepend its bin directory here: that would shadow the
+              ;; wrapper with the unshimmed binary.
               ;; Use full local parallelism for CMake/Ninja.
               (setenv "CMAKE_BUILD_PARALLEL_LEVEL" "16")
               ;; Guix kills builds that stay silent for too long; emit periodic
@@ -2011,10 +2185,16 @@ newer Bun releases.")
                         "ld-linux-x86-64.so.2"
                         bun)))))))
     (inputs
-     (list glibc))
+     (list glibc icu4c))
     (native-inputs
      `(("offline-seed" ,offline-seed)
        ("bun-stage0" ,bun-stage0)
+       ("bun-webkit" ,bun-webkit-for-1.3.8)
+       ,@(map (lambda (entry)
+                (list (string-append "vendor-" (car entry))
+                      (bun-vendored-source entry)))
+              %bun-vendored-sources)
+       ("vendor-brotli" ,bun-vendored-brotli)
        ("lezer-common" ,lezer-common-source)
        ("lezer-cpp" ,lezer-cpp-source)
        ("lezer-highlight" ,lezer-highlight-source)
