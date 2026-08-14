@@ -33,11 +33,13 @@
 
 (define rust-aes-0.8.4
   (crate-source "aes" "0.8.4"
-                "1853796anlwp4kqim0s6wm1srl4ib621nm0cl2h3c8klsjkgfsdi"))
+                "1853796anlwp4kqim0s6wm1srl4ib621nm0cl2h3c8klsjkgfsdi"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-aes-gcm-0.10.3
   (crate-source "aes-gcm" "0.10.3"
-                "1lgaqgg1gh9crg435509lqdhajg1m2vgma6f7fdj1qa2yyh10443"))
+                "1lgaqgg1gh9crg435509lqdhajg1m2vgma6f7fdj1qa2yyh10443"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-ahash-0.8.12
   (crate-source "ahash" "0.8.12"
@@ -229,7 +231,9 @@
 
 (define rust-bitstream-io-4.10.0
   (crate-source "bitstream-io" "4.10.0"
-                "07zxcy47l51k6vsxphzhgcnqyzl21pprs7212687c64s56z01zvy"))
+                "07zxcy47l51k6vsxphzhgcnqyzl21pprs7212687c64s56z01zvy"
+                #:snippet '(for-each delete-file-recursively
+                                     '("examples" "tests"))))
 
 (define rust-block-buffer-0.10.4
   (crate-source "block-buffer" "0.10.4"
@@ -321,11 +325,13 @@
 
 (define rust-chacha20-0.9.1
   (crate-source "chacha20" "0.9.1"
-                "0678wipx6kghp71hpzhl2qvx80q7caz3vm8vsvd07b1fpms3yqf3"))
+                "0678wipx6kghp71hpzhl2qvx80q7caz3vm8vsvd07b1fpms3yqf3"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-chacha20poly1305-0.10.1
   (crate-source "chacha20poly1305" "0.10.1"
-                "0dfwq9ag7x7lnd0znafpcn8h7k4nfr9gkzm0w7sc1lcj451pkk8h"))
+                "0dfwq9ag7x7lnd0znafpcn8h7k4nfr9gkzm0w7sc1lcj451pkk8h"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-charmed-bubbles-0.2.0
   (crate-source "charmed-bubbles" "0.2.0"
@@ -551,7 +557,8 @@
 
 (define rust-crossterm-0.29.0
   (crate-source "crossterm" "0.29.0"
-                "0yzqxxd90k7d2ac26xq1awsznsaq0qika2nv1ik3p0vzqvjg5ffq"))
+                "0yzqxxd90k7d2ac26xq1awsznsaq0qika2nv1ik3p0vzqvjg5ffq"
+                #:snippet '(delete-file-recursively "docs")))
 
 (define rust-crossterm-winapi-0.9.1
   (crate-source "crossterm_winapi" "0.9.1"
@@ -571,7 +578,8 @@
 
 (define rust-ctr-0.9.2
   (crate-source "ctr" "0.9.2"
-                "0d88b73waamgpfjdml78icxz45d95q7vi2aqa604b0visqdfws83"))
+                "0d88b73waamgpfjdml78icxz45d95q7vi2aqa604b0visqdfws83"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-ctrlc-3.5.2
   (crate-source "ctrlc" "3.5.2"
@@ -615,7 +623,8 @@
 
 (define rust-der-0.7.10
   (crate-source "der" "0.7.10"
-                "1jyxacyxdx6mxbkfw99jz59dzvcd9k17rq01a7xvn1dr6wl87hg7"))
+                "1jyxacyxdx6mxbkfw99jz59dzvcd9k17rq01a7xvn1dr6wl87hg7"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-der-parser-10.0.0
   (crate-source "der-parser" "10.0.0"
@@ -659,7 +668,8 @@
 
 (define rust-digest-0.11.2
   (crate-source "digest" "0.11.2"
-                "0g0m77q7zfafm4jgy6i70wwimy9f41ywidbz9w467rh8px4xnl28"))
+                "0g0m77q7zfafm4jgy6i70wwimy9f41ywidbz9w467rh8px4xnl28"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-directories-next-2.0.0
   (crate-source "directories-next" "2.0.0"
@@ -700,11 +710,13 @@
 
 (define rust-ed25519-2.2.3
   (crate-source "ed25519" "2.2.3"
-                "0lydzdf26zbn82g7xfczcac9d7mzm3qgx934ijjrd5hjpjx32m8i"))
+                "0lydzdf26zbn82g7xfczcac9d7mzm3qgx934ijjrd5hjpjx32m8i"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-ed25519-dalek-2.2.0
   (crate-source "ed25519-dalek" "2.2.0"
-                "1agcwij1z687hg26ngzwhnmpz29b2w56m8z1ap3pvrnfh709drvh"))
+                "1agcwij1z687hg26ngzwhnmpz29b2w56m8z1ap3pvrnfh709drvh"
+                #:snippet '(for-each delete-file-recursively '("docs" "tests"))))
 
 (define rust-either-1.15.0
   (crate-source "either" "1.15.0"
@@ -788,7 +800,8 @@
 
 (define rust-fdeflate-0.3.7
   (crate-source "fdeflate" "0.3.7"
-                "130ga18vyxbb5idbgi07njymdaavvk6j08yh1dfarm294ssm6s0y"))
+                "130ga18vyxbb5idbgi07njymdaavvk6j08yh1dfarm294ssm6s0y"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-fiat-crypto-0.2.9
   (crate-source "fiat-crypto" "0.2.9"
@@ -808,7 +821,8 @@
 
 (define rust-flate2-1.1.9
   (crate-source "flate2" "1.1.9"
-                "0g2pb7cxnzcbzrj8bw4v6gpqqp21aycmf6d84rzb6j748qkvlgw4"))
+                "0g2pb7cxnzcbzrj8bw4v6gpqqp21aycmf6d84rzb6j748qkvlgw4"
+                #:snippet '(for-each delete-file-recursively '("examples" "tests"))))
 
 (define rust-fluent-uri-0.4.1
   (crate-source "fluent-uri" "0.4.1"
@@ -1176,15 +1190,18 @@
 
 (define rust-hkdf-0.13.0
   (crate-source "hkdf" "0.13.0"
-                "061halz93gjbshffck2xzrrz9rmkch95rvwn5ipqd2y6433jdaja"))
+                "061halz93gjbshffck2xzrrz9rmkch95rvwn5ipqd2y6433jdaja"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-hmac-0.12.1
   (crate-source "hmac" "0.12.1"
-                "0pmbr069sfg76z7wsssfk5ddcqd9ncp79fyz6zcm6yn115yc6jbc"))
+                "0pmbr069sfg76z7wsssfk5ddcqd9ncp79fyz6zcm6yn115yc6jbc"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-hmac-0.13.0
   (crate-source "hmac" "0.13.0"
-                "0gw6avmix6ah63lf70dapxhml4dlcakl9f2lnm6b0hdf6abvq0v3"))
+                "0gw6avmix6ah63lf70dapxhml4dlcakl9f2lnm6b0hdf6abvq0v3"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-hstr-3.0.4
   (crate-source "hstr" "3.0.4"
@@ -1321,7 +1338,8 @@
 
 (define rust-jiff-tzdb-0.1.6
   (crate-source "jiff-tzdb" "0.1.6"
-                "0xihzlnnyk0xnrzpq4xcyjdcmy8xc3ychzb9ayjkh4vgha2fy069"))
+                "0xihzlnnyk0xnrzpq4xcyjdcmy8xc3ychzb9ayjkh4vgha2fy069"
+                #:snippet '(delete-file "concatenated-zoneinfo.dat")))
 
 (define rust-jiff-tzdb-platform-0.1.3
   (crate-source "jiff-tzdb-platform" "0.1.3"
@@ -1365,13 +1383,14 @@
                 "13rbdaa59l3w92q7kfcxx8zbikm99zzw54h59aqvcv5wx47jrzsj"))
 
 (define rust-libfuzzer-sys-0.4.12
-  ;; TODO REVIEW: Check bundled sources.
   (crate-source "libfuzzer-sys" "0.4.12"
-                "13ghagfsynmqda1pkpalila6kf0llqxh3214ynzi5knqgldnhapi"))
+                "13ghagfsynmqda1pkpalila6kf0llqxh3214ynzi5knqgldnhapi"
+                #:snippet '(delete-file-recursively "libfuzzer")))
 
 (define rust-libloading-0.8.9
   (crate-source "libloading" "0.8.9"
-                "0mfwxwjwi2cf0plxcd685yxzavlslz7xirss3b9cbrzyk4hv1i6p"))
+                "0mfwxwjwi2cf0plxcd685yxzavlslz7xirss3b9cbrzyk4hv1i6p"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-libm-0.2.16
   (crate-source "libm" "0.2.16"
@@ -1382,9 +1401,13 @@
                 "0v54zvgknag9310wcjykgv86pgq02qr3mzgkdg4r6m1k7ns3nbz0"))
 
 (define rust-libsqlite3-sys-0.37.0
-  ;; TODO REVIEW: Check bundled sources.
   (crate-source "libsqlite3-sys" "0.37.0"
-                "1cdrrwqarq4rq873ni5645r9cqllc73l8knkkjj62z0yqk413wdi"))
+                "1cdrrwqarq4rq873ni5645r9cqllc73l8knkkjj62z0yqk413wdi"
+                #:snippet
+                '(for-each delete-file
+                           (append
+                            (find-files "sqlcipher" "\\.(c|h)$")
+                            (find-files "sqlite3" "\\.(c|h)$")))))
 
 (define rust-linked-hash-map-0.5.6
   (crate-source "linked-hash-map" "0.5.6"
@@ -1451,7 +1474,8 @@
 
 (define rust-md-5-0.10.6
   (crate-source "md-5" "0.10.6"
-                "1kvq5rnpm4fzwmyv5nmnxygdhhb2369888a06gdc9pxyrzh7x7nq"))
+                "1kvq5rnpm4fzwmyv5nmnxygdhhb2369888a06gdc9pxyrzh7x7nq"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-memchr-2.8.0
   (crate-source "memchr" "2.8.0"
@@ -1630,9 +1654,9 @@
                 "1w63vbzamn2v9jpnlj3wkglapqss0fcvhhd8pqafzkis8iirqsrk"))
 
 (define rust-onig-sys-69.9.1
-  ;; TODO REVIEW: Check bundled sources.
   (crate-source "onig_sys" "69.9.1"
-                "1p17cxzqnpqzpzamh7aqwpagxlnbhzs6myxw4dgz2v9xxxp6ry67"))
+                "1p17cxzqnpqzpzamh7aqwpagxlnbhzs6myxw4dgz2v9xxxp6ry67"
+                #:snippet '(delete-file-recursively "oniguruma")))
 
 (define rust-oorandom-11.1.5
   (crate-source "oorandom" "11.1.5"
@@ -1692,7 +1716,8 @@
 
 (define rust-pem-rfc7468-0.7.0
   (crate-source "pem-rfc7468" "0.7.0"
-                "04l4852scl4zdva31c1z6jafbak0ni5pi0j38ml108zwzjdrrcw8"))
+                "04l4852scl4zdva31c1z6jafbak0ni5pi0j38ml108zwzjdrrcw8"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-percent-encoding-2.3.2
   (crate-source "percent-encoding" "2.3.2"
@@ -1700,7 +1725,8 @@
 
 (define rust-petgraph-0.6.5
   (crate-source "petgraph" "0.6.5"
-                "1ns7mbxidnn2pqahbbjccxkrqkrll2i5rbxx43ns6rh6fn3cridl"))
+                "1ns7mbxidnn2pqahbbjccxkrqkrll2i5rbxx43ns6rh6fn3cridl"
+                #:snippet '(for-each delete-file-recursively '("assets"))))
 
 (define rust-phf-0.11.3
   (crate-source "phf" "0.11.3"
@@ -1732,7 +1758,8 @@
 
 (define rust-pkcs8-0.10.2
   (crate-source "pkcs8" "0.10.2"
-                "1dx7w21gvn07azszgqd3ryjhyphsrjrmq5mmz1fbxkj5g0vv4l7r"))
+                "1dx7w21gvn07azszgqd3ryjhyphsrjrmq5mmz1fbxkj5g0vv4l7r"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-pkg-config-0.3.33
   (crate-source "pkg-config" "0.3.33"
@@ -1768,7 +1795,8 @@
 
 (define rust-poly1305-0.8.0
   (crate-source "poly1305" "0.8.0"
-                "1grs77skh7d8vi61ji44i8gpzs3r9x7vay50i6cg8baxfa8bsnc1"))
+                "1grs77skh7d8vi61ji44i8gpzs3r9x7vay50i6cg8baxfa8bsnc1"
+                #:snippet '(delete-file-recursively "src/fuzz")))
 
 (define rust-polyval-0.6.2
   (crate-source "polyval" "0.6.2"
@@ -1800,7 +1828,8 @@
 
 (define rust-pretty-assertions-1.4.1
   (crate-source "pretty_assertions" "1.4.1"
-                "0v8iq35ca4rw3rza5is3wjxwsf88303ivys07anc5yviybi31q9s"))
+                "0v8iq35ca4rw3rza5is3wjxwsf88303ivys07anc5yviybi31q9s"
+                #:snippet '(delete-file-recursively "examples")))
 
 (define rust-prettyplease-0.2.37
   (crate-source "prettyplease" "0.2.37"
@@ -1848,7 +1877,8 @@
 
 (define rust-psm-0.1.30
   (crate-source "psm" "0.1.30"
-                "1n0q1n5zx73gfl7zbc73n873lj6wz2dq3mxjy1s4sqyzcxj7cliq"))
+                "1n0q1n5zx73gfl7zbc73n873lj6wz2dq3mxjy1s4sqyzcxj7cliq"
+                #:snippet '(delete-file "src/arch/wasm32.o")))
 
 (define rust-pulldown-cmark-0.13.3
   (crate-source "pulldown-cmark" "0.13.3"
@@ -1872,7 +1902,8 @@
 
 (define rust-qoi-0.4.1
   (crate-source "qoi" "0.4.1"
-                "00c0wkb112annn2wl72ixyd78mf56p4lxkhlmsggx65l3v3n8vbz"))
+                "00c0wkb112annn2wl72ixyd78mf56p4lxkhlmsggx65l3v3n8vbz"
+                #:snippet '(delete-file-recursively "doc")))
 
 (define rust-quick-error-1.2.3
   (crate-source "quick-error" "1.2.3"
@@ -2057,7 +2088,8 @@
 
 (define rust-rustls-pemfile-2.2.0
   (crate-source "rustls-pemfile" "2.2.0"
-                "0l3f3mrfkgdjrava7ibwzgwc4h3dljw3pdkbsi9rkwz3zvji9qyw"))
+                "0l3f3mrfkgdjrava7ibwzgwc4h3dljw3pdkbsi9rkwz3zvji9qyw"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-rustls-pki-types-1.14.1
   (crate-source "rustls-pki-types" "1.14.1"
@@ -2133,23 +2165,28 @@
 
 (define rust-sha1-0.10.6
   (crate-source "sha1" "0.10.6"
-                "1fnnxlfg08xhkmwf2ahv634as30l1i3xhlhkvxflmasi5nd85gz3"))
+                "1fnnxlfg08xhkmwf2ahv634as30l1i3xhlhkvxflmasi5nd85gz3"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-sha1-0.11.0
   (crate-source "sha1" "0.11.0"
-                "05025pf8d8zr2qq5xyh5m3wqls1fn7813gz1mfs7551mk724rk5a"))
+                "05025pf8d8zr2qq5xyh5m3wqls1fn7813gz1mfs7551mk724rk5a"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-sha1-checked-0.10.0
   (crate-source "sha1-checked" "0.10.0"
-                "08s4h1drgwxzfn1mk11rn0r9i0rbjra1m0l2c0fbngij1jn9kxc9"))
+                "08s4h1drgwxzfn1mk11rn0r9i0rbjra1m0l2c0fbngij1jn9kxc9"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-sha2-0.10.9
   (crate-source "sha2" "0.10.9"
-                "10xjj843v31ghsksd9sl9y12qfc48157j1xpb8v1ml39jy0psl57"))
+                "10xjj843v31ghsksd9sl9y12qfc48157j1xpb8v1ml39jy0psl57"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-sha2-0.11.0
   (crate-source "sha2" "0.11.0"
-                "1x15x22c5yf54ac0np5bfqnq5x0hdw4wqzpi48zwn94ma0bsfss4"))
+                "1x15x22c5yf54ac0np5bfqnq5x0hdw4wqzpi48zwn94ma0bsfss4"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-sharded-slab-0.1.7
   (crate-source "sharded-slab" "0.1.7"
@@ -2229,7 +2266,8 @@
 
 (define rust-spki-0.7.3
   (crate-source "spki" "0.7.3"
-                "17fj8k5fmx4w9mp27l970clrh5qa7r5sjdvbsln987xhb34dc7nr"))
+                "17fj8k5fmx4w9mp27l970clrh5qa7r5sjdvbsln987xhb34dc7nr"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-sqlmodel-core-0.2.2
   (crate-source "sqlmodel-core" "0.2.2"
@@ -2397,13 +2435,14 @@
 
 (define rust-tiff-0.10.3
   (crate-source "tiff" "0.10.3"
-                "0vrkdk9cdk07rh7iifcxpn6m8zv3wz695mizhr8rb3gfgzg0b5mg"))
+                "0vrkdk9cdk07rh7iifcxpn6m8zv3wz695mizhr8rb3gfgzg0b5mg"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-tikv-jemalloc-sys-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7
-  ;; TODO REVIEW: Check bundled sources.
   (crate-source "tikv-jemalloc-sys"
                 "0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
-                "0frahmfl05hppiy1sz9g14qb5jv2q4wr323d83xcx8l6mfrab2nd"))
+                "0frahmfl05hppiy1sz9g14qb5jv2q4wr323d83xcx8l6mfrab2nd"
+                #:snippet '(delete-file-recursively "jemalloc")))
 
 (define rust-tikv-jemallocator-0.6.1
   (crate-source "tikv-jemallocator" "0.6.1"
@@ -2559,7 +2598,8 @@
 
 (define rust-unicode-id-start-1.4.0
   (crate-source "unicode-id-start" "1.4.0"
-                "01v0ig6a5dy75r9wwhnjfw1fzcj3nhcqj3q2c11dw6aykg99mdw1"))
+                "01v0ig6a5dy75r9wwhnjfw1fzcj3nhcqj3q2c11dw6aykg99mdw1"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-unicode-ident-1.0.24
   (crate-source "unicode-ident" "1.0.24"
@@ -2595,7 +2635,8 @@
 
 (define rust-untrusted-0.9.0
   (crate-source "untrusted" "0.9.0"
-                "1ha7ib98vkc538x0z60gfn0fc5whqdd85mb87dvisdcaifi6vjwf"))
+                "1ha7ib98vkc538x0z60gfn0fc5whqdd85mb87dvisdcaifi6vjwf"
+                #:snippet '(delete-file-recursively "mk")))
 
 (define rust-unty-next-0.1.2
   (crate-source "unty-next" "0.1.2"
@@ -2631,7 +2672,8 @@
 
 (define rust-vcpkg-0.2.15
   (crate-source "vcpkg" "0.2.15"
-                "09i4nf5y8lig6xgj3f7fyrvzd3nlaw4znrihw8psidvv5yk4xkdc"))
+                "09i4nf5y8lig6xgj3f7fyrvzd3nlaw4znrihw8psidvv5yk4xkdc"
+                #:snippet '(delete-file-recursively "test-data")))
 
 (define rust-vergen-9.1.0
   (crate-source "vergen" "9.1.0"
@@ -2667,7 +2709,8 @@
 
 (define rust-walkdir-2.5.0
   (crate-source "walkdir" "2.5.0"
-                "0jsy7a710qv8gld5957ybrnc07gavppp963gs32xk4ag8130jy99"))
+                "0jsy7a710qv8gld5957ybrnc07gavppp963gs32xk4ag8130jy99"
+                #:snippet '(for-each delete-file-recursively '("compare" "src/tests"))))
 
 (define rust-wasi-0.11.1+wasi-snapshot-preview1
   (crate-source "wasi" "0.11.1+wasi-snapshot-preview1"
@@ -2703,7 +2746,9 @@
 
 (define rust-wasm-compose-0.252.0
   (crate-source "wasm-compose" "0.252.0"
-                "06z3hi73z796mx7igkk0f5mjdcmzmkgir1b359rm8pd3a43p36ym"))
+                "06z3hi73z796mx7igkk0f5mjdcmzmkgir1b359rm8pd3a43p36ym"
+                ;; tests/compositions carries a prebuilt WebAssembly fixture.
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-wasm-encoder-0.244.0
   (crate-source "wasm-encoder" "0.244.0"
@@ -2804,7 +2849,8 @@
 
 (define rust-webpki-roots-1.0.7
   (crate-source "webpki-roots" "1.0.7"
-                "17gblaqmp51znxd2c18c04k8yfnf7s77c04n6hdmzxbcr52fxxaj"))
+                "17gblaqmp51znxd2c18c04k8yfnf7s77c04n6hdmzxbcr52fxxaj"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-weezl-0.1.12
   (crate-source "weezl" "0.1.12"
@@ -2816,7 +2862,8 @@
 
 (define rust-winapi-i686-pc-windows-gnu-0.4.0
   (crate-source "winapi-i686-pc-windows-gnu" "0.4.0"
-                "1dmpa6mvcvzz16zg6d5vrfy4bxgg541wxrcip7cnshi06v38ffxc"))
+                "1dmpa6mvcvzz16zg6d5vrfy4bxgg541wxrcip7cnshi06v38ffxc"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-winapi-util-0.1.11
   (crate-source "winapi-util" "0.1.11"
@@ -2824,7 +2871,8 @@
 
 (define rust-winapi-x86-64-pc-windows-gnu-0.4.0
   (crate-source "winapi-x86_64-pc-windows-gnu" "0.4.0"
-                "0gqq64czqb64kskjryj8isp62m2sgvx25yyj3kpc2myh85w24bki"))
+                "0gqq64czqb64kskjryj8isp62m2sgvx25yyj3kpc2myh85w24bki"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-0.62.2
   (crate-source "windows" "0.62.2"
@@ -2905,95 +2953,118 @@
 
 (define rust-windows-aarch64-gnullvm-0.42.2
   (crate-source "windows_aarch64_gnullvm" "0.42.2"
-                "1y4q0qmvl0lvp7syxvfykafvmwal5hrjb4fmv04bqs0bawc52yjr"))
+                "1y4q0qmvl0lvp7syxvfykafvmwal5hrjb4fmv04bqs0bawc52yjr"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-aarch64-gnullvm-0.52.6
   (crate-source "windows_aarch64_gnullvm" "0.52.6"
-                "1lrcq38cr2arvmz19v32qaggvj8bh1640mdm9c2fr877h0hn591j"))
+                "1lrcq38cr2arvmz19v32qaggvj8bh1640mdm9c2fr877h0hn591j"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-aarch64-gnullvm-0.53.1
   (crate-source "windows_aarch64_gnullvm" "0.53.1"
-                "0lqvdm510mka9w26vmga7hbkmrw9glzc90l4gya5qbxlm1pl3n59"))
+                "0lqvdm510mka9w26vmga7hbkmrw9glzc90l4gya5qbxlm1pl3n59"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-aarch64-msvc-0.42.2
   (crate-source "windows_aarch64_msvc" "0.42.2"
-                "0hsdikjl5sa1fva5qskpwlxzpc5q9l909fpl1w6yy1hglrj8i3p0"))
+                "0hsdikjl5sa1fva5qskpwlxzpc5q9l909fpl1w6yy1hglrj8i3p0"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-aarch64-msvc-0.52.6
   (crate-source "windows_aarch64_msvc" "0.52.6"
-                "0sfl0nysnz32yyfh773hpi49b1q700ah6y7sacmjbqjjn5xjmv09"))
+                "0sfl0nysnz32yyfh773hpi49b1q700ah6y7sacmjbqjjn5xjmv09"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-aarch64-msvc-0.53.1
   (crate-source "windows_aarch64_msvc" "0.53.1"
-                "01jh2adlwx043rji888b22whx4bm8alrk3khjpik5xn20kl85mxr"))
+                "01jh2adlwx043rji888b22whx4bm8alrk3khjpik5xn20kl85mxr"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-gnu-0.42.2
   (crate-source "windows_i686_gnu" "0.42.2"
-                "0kx866dfrby88lqs9v1vgmrkk1z6af9lhaghh5maj7d4imyr47f6"))
+                "0kx866dfrby88lqs9v1vgmrkk1z6af9lhaghh5maj7d4imyr47f6"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-gnu-0.52.6
   (crate-source "windows_i686_gnu" "0.52.6"
-                "02zspglbykh1jh9pi7gn8g1f97jh1rrccni9ivmrfbl0mgamm6wf"))
+                "02zspglbykh1jh9pi7gn8g1f97jh1rrccni9ivmrfbl0mgamm6wf"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-gnu-0.53.1
   (crate-source "windows_i686_gnu" "0.53.1"
-                "18wkcm82ldyg4figcsidzwbg1pqd49jpm98crfz0j7nqd6h6s3ln"))
+                "18wkcm82ldyg4figcsidzwbg1pqd49jpm98crfz0j7nqd6h6s3ln"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-gnullvm-0.52.6
   (crate-source "windows_i686_gnullvm" "0.52.6"
-                "0rpdx1537mw6slcpqa0rm3qixmsb79nbhqy5fsm3q2q9ik9m5vhf"))
+                "0rpdx1537mw6slcpqa0rm3qixmsb79nbhqy5fsm3q2q9ik9m5vhf"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-gnullvm-0.53.1
   (crate-source "windows_i686_gnullvm" "0.53.1"
-                "030qaxqc4salz6l4immfb6sykc6gmhyir9wzn2w8mxj8038mjwzs"))
+                "030qaxqc4salz6l4immfb6sykc6gmhyir9wzn2w8mxj8038mjwzs"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-msvc-0.42.2
   (crate-source "windows_i686_msvc" "0.42.2"
-                "0q0h9m2aq1pygc199pa5jgc952qhcnf0zn688454i7v4xjv41n24"))
+                "0q0h9m2aq1pygc199pa5jgc952qhcnf0zn688454i7v4xjv41n24"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-msvc-0.52.6
   (crate-source "windows_i686_msvc" "0.52.6"
-                "0rkcqmp4zzmfvrrrx01260q3xkpzi6fzi2x2pgdcdry50ny4h294"))
+                "0rkcqmp4zzmfvrrrx01260q3xkpzi6fzi2x2pgdcdry50ny4h294"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-i686-msvc-0.53.1
   (crate-source "windows_i686_msvc" "0.53.1"
-                "1hi6scw3mn2pbdl30ji5i4y8vvspb9b66l98kkz350pig58wfyhy"))
+                "1hi6scw3mn2pbdl30ji5i4y8vvspb9b66l98kkz350pig58wfyhy"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-gnu-0.42.2
   (crate-source "windows_x86_64_gnu" "0.42.2"
-                "0dnbf2xnp3xrvy8v9mgs3var4zq9v9yh9kv79035rdgyp2w15scd"))
+                "0dnbf2xnp3xrvy8v9mgs3var4zq9v9yh9kv79035rdgyp2w15scd"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-gnu-0.52.6
   (crate-source "windows_x86_64_gnu" "0.52.6"
-                "0y0sifqcb56a56mvn7xjgs8g43p33mfqkd8wj1yhrgxzma05qyhl"))
+                "0y0sifqcb56a56mvn7xjgs8g43p33mfqkd8wj1yhrgxzma05qyhl"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-gnu-0.53.1
   (crate-source "windows_x86_64_gnu" "0.53.1"
-                "16d4yiysmfdlsrghndr97y57gh3kljkwhfdbcs05m1jasz6l4f4w"))
+                "16d4yiysmfdlsrghndr97y57gh3kljkwhfdbcs05m1jasz6l4f4w"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-gnullvm-0.42.2
   (crate-source "windows_x86_64_gnullvm" "0.42.2"
-                "18wl9r8qbsl475j39zvawlidp1bsbinliwfymr43fibdld31pm16"))
+                "18wl9r8qbsl475j39zvawlidp1bsbinliwfymr43fibdld31pm16"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-gnullvm-0.52.6
   (crate-source "windows_x86_64_gnullvm" "0.52.6"
-                "03gda7zjx1qh8k9nnlgb7m3w3s1xkysg55hkd1wjch8pqhyv5m94"))
+                "03gda7zjx1qh8k9nnlgb7m3w3s1xkysg55hkd1wjch8pqhyv5m94"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-gnullvm-0.53.1
   (crate-source "windows_x86_64_gnullvm" "0.53.1"
-                "1qbspgv4g3q0vygkg8rnql5c6z3caqv38japiynyivh75ng1gyhg"))
+                "1qbspgv4g3q0vygkg8rnql5c6z3caqv38japiynyivh75ng1gyhg"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-msvc-0.42.2
   (crate-source "windows_x86_64_msvc" "0.42.2"
-                "1w5r0q0yzx827d10dpjza2ww0j8iajqhmb54s735hhaj66imvv4s"))
+                "1w5r0q0yzx827d10dpjza2ww0j8iajqhmb54s735hhaj66imvv4s"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-msvc-0.52.6
   (crate-source "windows_x86_64_msvc" "0.52.6"
-                "1v7rb5cibyzx8vak29pdrk8nx9hycsjs4w0jgms08qk49jl6v7sq"))
+                "1v7rb5cibyzx8vak29pdrk8nx9hycsjs4w0jgms08qk49jl6v7sq"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-windows-x86-64-msvc-0.53.1
   (crate-source "windows_x86_64_msvc" "0.53.1"
-                "0l6npq76vlq4ksn4bwsncpr8508mk0gmznm6wnhjg95d19gzzfyn"))
+                "0l6npq76vlq4ksn4bwsncpr8508mk0gmznm6wnhjg95d19gzzfyn"
+                #:snippet '(delete-file-recursively "lib")))
 
 (define rust-winnow-0.7.15
   (crate-source "winnow" "0.7.15"
@@ -3005,11 +3076,13 @@
 
 (define rust-wit-bindgen-0.46.0
   (crate-source "wit-bindgen" "0.46.0"
-                "0ngysw50gp2wrrfxbwgp6dhw1g6sckknsn3wm7l00vaf7n48aypi"))
+                "0ngysw50gp2wrrfxbwgp6dhw1g6sckknsn3wm7l00vaf7n48aypi"
+                #:snippet '(for-each delete-file (find-files "." "\\.(a|o|wasm)$"))))
 
 (define rust-wit-bindgen-0.51.0
   (crate-source "wit-bindgen" "0.51.0"
-                "19fazgch8sq5cvjv3ynhhfh5d5x08jq2pkw8jfb05vbcyqcr496p"))
+                "19fazgch8sq5cvjv3ynhhfh5d5x08jq2pkw8jfb05vbcyqcr496p"
+                #:snippet '(for-each delete-file (find-files "." "\\.(a|o|wasm)$"))))
 
 (define rust-wit-bindgen-core-0.51.0
   (crate-source "wit-bindgen-core" "0.51.0"
@@ -3025,15 +3098,20 @@
 
 (define rust-wit-component-0.244.0
   (crate-source "wit-component" "0.244.0"
-                "1clwxgsgdns3zj2fqnrjcp8y5gazwfa1k0sy5cbk0fsmx4hflrlx"))
+                "1clwxgsgdns3zj2fqnrjcp8y5gazwfa1k0sy5cbk0fsmx4hflrlx"
+                #:snippet '(delete-file "libdl.so")))
 
 (define rust-wit-parser-0.244.0
   (crate-source "wit-parser" "0.244.0"
-                "0dm7avvdxryxd5b02l0g5h6933z1cw5z0d4wynvq2cywq55srj7c"))
+                "0dm7avvdxryxd5b02l0g5h6933z1cw5z0d4wynvq2cywq55srj7c"
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-wit-parser-0.252.0
   (crate-source "wit-parser" "0.252.0"
-                "0b8npigdl2shbpxpqp3fap26n13n6q1ca09jrw66471p22hvwrj2"))
+                "0b8npigdl2shbpxpqp3fap26n13n6q1ca09jrw66471p22hvwrj2"
+                ;; Same treatment guix gives wit-parser 0.244.0: the test tree
+                ;; carries a prebuilt WebAssembly fixture.
+                #:snippet '(delete-file-recursively "tests")))
 
 (define rust-writeable-0.6.3
   (crate-source "writeable" "0.6.3"
@@ -3049,7 +3127,8 @@
 
 (define rust-x509-parser-0.18.1
   (crate-source "x509-parser" "0.18.1"
-                "00jj31m702vxas7xs0vjn2863y7k4kp266w5q1ms0z85rrqhyfyl"))
+                "00jj31m702vxas7xs0vjn2863y7k4kp266w5q1ms0z85rrqhyfyl"
+                #:snippet '(delete-file-recursively "assets")))
 
 (define rust-xattr-1.6.1
   (crate-source "xattr" "1.6.1"
@@ -3061,7 +3140,8 @@
 
 (define rust-y4m-0.8.0
   (crate-source "y4m" "0.8.0"
-                "0j24y2zf60lpxwd7kyg737hqfyqx16y32s0fjyi6fax6w4hlnnks"))
+                "0j24y2zf60lpxwd7kyg737hqfyqx16y32s0fjyi6fax6w4hlnnks"
+                #:snippet '(delete-file-recursively "scripts")))
 
 (define rust-yaml-rust-0.4.5
   (crate-source "yaml-rust" "0.4.5"
@@ -3069,7 +3149,8 @@
 
 (define rust-yansi-1.0.1
   (crate-source "yansi" "1.0.1"
-                "0jdh55jyv0dpd38ij4qh60zglbw9aa8wafqai6m0wa7xaxk3mrfg"))
+                "0jdh55jyv0dpd38ij4qh60zglbw9aa8wafqai6m0wa7xaxk3mrfg"
+                #:snippet '(delete-file-recursively ".github")))
 
 (define rust-yoke-0.8.2
   (crate-source "yoke" "0.8.2"
@@ -3132,9 +3213,9 @@
                 "179vxmkzhpz6cq6mfzvgwc99bpgllkr6lwxq7ylh5dmby3aw8jcg"))
 
 (define rust-zstd-sys-2.0.16+zstd.1.5.7
-  ;; TODO REVIEW: Check bundled sources.
   (crate-source "zstd-sys" "2.0.16+zstd.1.5.7"
-                "0j1pd2iaqpvaxlgqmmijj68wma7xwdv9grrr63j873yw5ay9xqci"))
+                "0j1pd2iaqpvaxlgqmmijj68wma7xwdv9grrr63j873yw5ay9xqci"
+                #:snippet '(delete-file-recursively "zstd")))
 
 (define rust-zune-core-0.4.12
   (crate-source "zune-core" "0.4.12"
