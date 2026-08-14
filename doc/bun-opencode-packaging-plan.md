@@ -2464,3 +2464,59 @@ One self-inflicted mistake worth recording: dom-expressions was first aliased
 straight at its store path, which put a /gnu/store reference back into the
 output -- the very leak the previous section removed.  It is copied into the
 build directory like everything else now.
+
+## One package per dependency
+
+The three aggregate builders each produced a single derivation holding many
+npm packages: npm-packages-from-source held 34, actions-toolkit-from-source
+4, vercel-ai-from-source every package in the vercel/ai monorepo.  That is
+convenient and wrong.  Guix expects one derivation per package so each can be
+built, substituted, inspected and pinned on its own, and no upstream
+submission would be accepted in the aggregate shape.
+
+Each is now its own package -- 62 of them, plus solid-js-from-source:
+
+  node-agent-base, node-hono, node-remeda, node-clack-core, ...   (34)
+  node-actions-core, node-actions-exec, ...                        (4)
+  node-ai, node-ai-sdk-provider, node-ai-sdk-anthropic, ...       (24)
+
+The build logic stays in one procedure per family -- npm-source-package,
+actions-toolkit-package, vercel-ai-package -- so it is written once rather
+than 62 times, but the definitions themselves are ordinary `define-public'
+forms and `guix build node-ret' works on its own.  opencode takes them as
+individual inputs and lists each as a substitution root.
+
+%vercel-ai-packages names the 24 the monorepo publishes that opencode
+actually resolves; it carries roughly twice as many that nothing here
+reaches.
+
+### A package was dropped, and the build did not notice
+
+The definitions were generated from the existing spec list with a regular
+expression anchored to the start of a line.  The first entry of
+%npm-from-source-packages shares its line with the opening `'((', so it
+matched 34 of the entries and missed agent-base.  All 33 generated packages
+built, and so did opencode.
+
+What caught it was the substitution count: 1907 files replaced where the
+aggregate had replaced 1917.  Ten is two files times the five copies of
+agent-base in the tree.  After restoring it the count is 1917 again, with the
+same 41 copies skipped at other versions, which is what makes the refactor
+verifiably equivalent rather than merely green.
+
+Worth keeping: for this work the count is a far better regression test than
+the exit status, and it has now caught two distinct faults -- this one and the
+earlier substitution phase that could overwrite files but never add them.
+
+### Two gexp traps
+
+vercel-ai-package first carried two `(source ...)` fields, because the
+original package set `(source #f)` on a line the edit did not touch; guix
+reports that only as a "duplicate field initializer" warning and builds the
+wrong thing.
+
+The vercel builder writes a JavaScript program out as a Scheme string and
+runs it.  `#$directory' inside that string is not interpolated -- gexps do
+not substitute into string literals -- so the script received the characters
+verbatim and reported "no packages were built".  The directory is passed
+through the environment instead.

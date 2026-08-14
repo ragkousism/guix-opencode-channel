@@ -24,6 +24,7 @@
   #:use-module (guix build-system trivial)
   #:use-module (guix utils)
   #:use-module (ice-9 binary-ports)
+  #:use-module (ice-9 match)
   #:use-module (ice-9 regex)
   #:use-module (rnrs bytevectors)
   #:use-module (srfi srfi-1)
@@ -64,9 +65,7 @@
             parcel-watcher-node
             emscripten
             web-tree-sitter-wasm
-            vercel-ai-from-source
-            actions-toolkit-from-source
-            npm-packages-from-source
+            solid-js-from-source
             bun-build-system-smoke
             opencode
             bun-from-source-local
@@ -3710,12 +3709,9 @@ build, test, and install phases.")
 ;; covers the set.
 (define %vercel-ai-version "5.0.124")
 
-(define-public vercel-ai-from-source
-  (package
-    (name "vercel-ai-from-source")
-    (version %vercel-ai-version)
-    (source
-     (origin
+;; The monorepo checkout is shared by every package built from it.
+(define vercel-ai-source
+  (origin
        (method git-fetch)
        (uri (git-reference (url "https://github.com/vercel/ai")
                            (commit (string-append "ai@" %vercel-ai-version))))
@@ -3723,6 +3719,43 @@ build, test, and install phases.")
        (sha256
         (base32
          "1jfzb1ycknmzmspkyp01f96q84xkri630yb2br5s2yh8q6c78haq"))))
+
+;; Directory under packages/ in the monorepo.  Every one of these is
+;; installed in opencode's tree; the monorepo carries about twice as many
+;; that nothing here resolves.
+(define %vercel-ai-packages
+  '("ai"
+    "amazon-bedrock"
+    "anthropic"
+    "azure"
+    "cerebras"
+    "cohere"
+    "deepgram"
+    "deepinfra"
+    "deepseek"
+    "elevenlabs"
+    "fireworks"
+    "gateway"
+    "google"
+    "google-vertex"
+    "groq"
+    "mistral"
+    "openai"
+    "openai-compatible"
+    "perplexity"
+    "provider"
+    "provider-utils"
+    "togetherai"
+    "vercel"
+    "xai"))
+
+(define (vercel-ai-package directory)
+  (package
+    (name (if (string=? directory "ai")
+              "node-ai"
+              (string-append "node-ai-sdk-" directory)))
+    (version %vercel-ai-version)
+    (source vercel-ai-source)
     (build-system gnu-build-system)
     (arguments
      (list
@@ -3740,7 +3773,7 @@ build, test, and install phases.")
 const { readdirSync, existsSync, mkdirSync, readFileSync } = require('fs');
 const { execFileSync } = require('child_process');
 let built = 0;
-for (const dir of readdirSync('packages')) {
+for (const dir of [process.env.PACKAGE_DIRECTORY]) {
   const manifest = `packages/${dir}/package.json`;
   const entry = `packages/${dir}/src/index.ts`;
   if (!existsSync(manifest) || !existsSync(entry)) continue;
@@ -3787,6 +3820,9 @@ walk('out');
 if (leaked.length)
   throw new Error('unsubstituted build-time identifiers: ' + leaked.slice(0, 5).join('; '));
 " port)))
+              ;; The script is written out as a string, where #$ is not
+              ;; interpolated, so the directory is passed in the environment.
+              (setenv "PACKAGE_DIRECTORY" #$directory)
               (invoke "node" "build-packages.js")
               (delete-file "build-packages.js")))
           (replace 'install
@@ -3801,10 +3837,60 @@ if (leaked.length)
     (home-page "https://github.com/vercel/ai")
     (synopsis "AI SDK packages built from source")
     (description
-     "This package builds the @code{ai} and @code{@@ai-sdk/*} JavaScript
-packages from the vercel/ai monorepo, replacing the built output those
-packages are published as on npm.")
+     "This package builds one JavaScript package from the vercel/ai
+monorepo, replacing the built output it is published as on npm.")
     (license license:expat)))
+
+(define-public node-ai
+  (vercel-ai-package "ai"))
+(define-public node-ai-sdk-amazon-bedrock
+  (vercel-ai-package "amazon-bedrock"))
+(define-public node-ai-sdk-anthropic
+  (vercel-ai-package "anthropic"))
+(define-public node-ai-sdk-azure
+  (vercel-ai-package "azure"))
+(define-public node-ai-sdk-cerebras
+  (vercel-ai-package "cerebras"))
+(define-public node-ai-sdk-cohere
+  (vercel-ai-package "cohere"))
+(define-public node-ai-sdk-deepgram
+  (vercel-ai-package "deepgram"))
+(define-public node-ai-sdk-deepinfra
+  (vercel-ai-package "deepinfra"))
+(define-public node-ai-sdk-deepseek
+  (vercel-ai-package "deepseek"))
+(define-public node-ai-sdk-elevenlabs
+  (vercel-ai-package "elevenlabs"))
+(define-public node-ai-sdk-fireworks
+  (vercel-ai-package "fireworks"))
+(define-public node-ai-sdk-gateway
+  (vercel-ai-package "gateway"))
+(define-public node-ai-sdk-google
+  (vercel-ai-package "google"))
+(define-public node-ai-sdk-google-vertex
+  (vercel-ai-package "google-vertex"))
+(define-public node-ai-sdk-groq
+  (vercel-ai-package "groq"))
+(define-public node-ai-sdk-mistral
+  (vercel-ai-package "mistral"))
+(define-public node-ai-sdk-openai
+  (vercel-ai-package "openai"))
+(define-public node-ai-sdk-openai-compatible
+  (vercel-ai-package "openai-compatible"))
+(define-public node-ai-sdk-perplexity
+  (vercel-ai-package "perplexity"))
+(define-public node-ai-sdk-provider
+  (vercel-ai-package "provider"))
+(define-public node-ai-sdk-provider-utils
+  (vercel-ai-package "provider-utils"))
+(define-public node-ai-sdk-togetherai
+  (vercel-ai-package "togetherai"))
+(define-public node-ai-sdk-vercel
+  (vercel-ai-package "vercel"))
+(define-public node-ai-sdk-xai
+  (vercel-ai-package "xai"))
+(define %vercel-from-source
+  (map vercel-ai-package %vercel-ai-packages))
 
 ;; The @actions/* packages are published as per-file tsc output under lib/,
 ;; not as a bundle, so esbuild runs in transpile mode with --outdir.  Each
@@ -3839,11 +3925,13 @@ packages are published as on npm.")
       ;; 7zdec.exe.
       (snippet %strip-compiled-artefacts))))
 
-(define-public actions-toolkit-from-source
+(define (actions-toolkit-package entry)
+  (match entry
+    ((subdirectory version commit hash)
   (package
-    (name "actions-toolkit-from-source")
-    (version "0")
-    (source #f)
+    (name (string-append "node-actions-" subdirectory))
+    (version version)
+    (source (actions-toolkit-source entry))
     (build-system trivial-build-system)
     (arguments
      (list
@@ -3859,8 +3947,7 @@ packages are published as on npm.")
           (for-each
            (match-lambda
              ((subdirectory version commit hash)
-              (let* ((source (assoc-ref %build-inputs
-                                        (string-append "source-" subdirectory)))
+              (let* ((source (assoc-ref %build-inputs "source"))
                      (name (string-append "@actions/" subdirectory))
                      (target (string-append #$output "/lib/" name))
                      (sources (find-files (string-append source "/packages/"
@@ -3878,7 +3965,7 @@ packages are published as on npm.")
                                (list "--platform=node" "--format=cjs"
                                      (string-append "--outdir=" target
                                                     "/lib")))))))
-           '#$%actions-toolkit-packages)
+           (list '#$entry))
           ;; Same check as the vercel/ai builder: an identifier the upstream
           ;; bundler would have substituted must not survive into the output,
           ;; where it becomes a free variable that throws the first time that
@@ -3912,18 +3999,28 @@ packages are published as on npm.")
     (native-inputs
      `(("coreutils" ,coreutils)
        ("esbuild" ,esbuild)
-       ,@(map (lambda (entry)
-                (list (string-append "source-" (car entry))
-                      (actions-toolkit-source entry)))
-              %actions-toolkit-packages)))
+       ))
     (supported-systems '("x86_64-linux"))
     (home-page "https://github.com/actions/toolkit")
     (synopsis "GitHub Actions toolkit packages built from source")
     (description
      "This package builds the @code{@@actions/*} JavaScript packages that
-opencode bundles, from the commits in actions/toolkit where each version was
+opencode bundles, from the commit in actions/toolkit where that version was
 set, replacing the built output published on npm.")
-    (license license:expat)))
+    (license license:expat)))))
+
+(define-public node-actions-core
+  (actions-toolkit-package (assoc "core" %actions-toolkit-packages)))
+(define-public node-actions-exec
+  (actions-toolkit-package (assoc "exec" %actions-toolkit-packages)))
+(define-public node-actions-http-client
+  (actions-toolkit-package (assoc "http-client" %actions-toolkit-packages)))
+(define-public node-actions-io
+  (actions-toolkit-package (assoc "io" %actions-toolkit-packages)))
+
+(define %actions-from-source
+  (list node-actions-core node-actions-exec node-actions-http-client
+        node-actions-io))
 
 ;; The rest of the prebuilt-JavaScript packages come one or two at a time from
 ;; unrelated repositories, in the same two shapes: a bundle per format, or
@@ -4388,11 +4485,23 @@ the textual substitution of the development flag that separates the
 production, development and server builds.")
     (license license:expat)))
 
-(define-public npm-packages-from-source
+;; Each dependency is packaged separately: one derivation per npm package,
+;; buildable and substitutable on its own.  The build logic is shared here
+;; rather than repeated, but the packages below are ordinary definitions.
+(define (npm-name->package-name name)
+  ;; "@clack/core" becomes "node-clack-core".
+  (string-append "node-"
+                 (string-map (lambda (c) (if (char=? c #\/) #\- c))
+                             (string-filter (lambda (c) (not (char=? c #\@)))
+                                            name))))
+
+(define (npm-source-package entry)
+  (match entry
+    ((name repository subdirectory version commit hash mode aliases)
   (package
-    (name "npm-packages-from-source")
-    (version "0")
-    (source #f)
+    (name (npm-name->package-name name))
+    (version version)
+    (source (npm-from-source-origin entry))
     (build-system trivial-build-system)
     (arguments
      (list
@@ -4424,8 +4533,7 @@ production, development and server builds.")
           (for-each
            (match-lambda
              ((name repository subdirectory version commit hash mode aliases)
-              (let* ((source (assoc-ref %build-inputs
-                                        (string-append "src-" name)))
+              (let* ((source (assoc-ref %build-inputs "source"))
                      (store-directory (string-append source "/"
                                                      subdirectory))
                      ;; esbuild records every module's path in the __esm
@@ -4453,17 +4561,20 @@ production, development and server builds.")
                      (alias-flags
                       (if (string-null? aliases)
                           '()
-                          (let ((lib (string-append
-                                      (assoc-ref %build-inputs "vercel-ai")
-                                      "/lib")))
+                          (let ()
                             (append-map
                              (lambda (d)
                                (cond
                                 ((string-prefix? "+" d)
+                                 ;; Each vercel package is its own input now,
+                                 ;; registered under its npm name.
                                  (let ((n (string-drop d 1)))
-                                   (list (string-append "--alias:" n "="
-                                                        lib "/" n
-                                                        "/dist/index.mjs"))))
+                                   (list (string-append
+                                          "--alias:" n "="
+                                          (assoc-ref %build-inputs
+                                                     (string-append "vercel-"
+                                                                    n))
+                                          "/lib/" n "/dist/index.mjs"))))
                                 ((string-prefix? "^" d)
                                  ;; A source fetched purely to be inlined.
                                  (let* ((n (string-drop d 1))
@@ -4626,7 +4737,7 @@ production, development and server builds.")
                                 (string-append "--outfile=" output)
                                 (append externals alias-flags))))))
                  (string-split mode #\,)))))
-           '#$%npm-from-source-packages)
+           (list '#$entry))
           ;; An identifier the upstream bundler would have substituted must
           ;; not survive into the output, where it becomes a free variable
           ;; that throws the first time that code runs.
@@ -4660,24 +4771,168 @@ production, development and server builds.")
      `(("coreutils" ,coreutils)
        ("esbuild" ,esbuild)
        ("node" ,node)
-       ("vercel-ai" ,vercel-ai-from-source)
        ("bun" ,bun-from-source)
        ("tree-sitter-grammars" ,tree-sitter-wasm-grammars)
+       ,@(map (lambda (token)
+                (let ((n (string-drop token 1)))
+                  (list (string-append "vercel-" n)
+                        (vercel-ai-package
+                         (string-drop n (string-length "@ai-sdk/"))))))
+              (filter (lambda (t) (string-prefix? "+" t))
+                      (string-split aliases #\space)))
        ,@(map (lambda (entry)
                 (list (string-append "alias-" (car entry))
                       (npm-alias-source entry)))
               %npm-alias-sources)
-       ,@(map (lambda (entry)
-                (list (string-append "src-" (car entry))
-                      (npm-from-source-origin entry)))
-              %npm-from-source-packages)))
+       ))
     (supported-systems '("x86_64-linux"))
     (home-page "https://guix.gnu.org")
-    (synopsis "Assorted npm packages built from source")
+    (synopsis "npm package built from source")
     (description
-     "This package builds npm dependencies of opencode from their upstream
+     "This package builds an npm dependency of opencode from its upstream
 sources, replacing the built output published on npm.")
-    (license license:expat)))
+    (license license:expat)))))
+
+
+;; One package per dependency: each is its own derivation.
+(define-public node-agent-base
+  (npm-source-package (assoc "agent-base" %npm-from-source-packages)))
+
+(define-public node-https-proxy-agent
+  (npm-source-package (assoc "https-proxy-agent" %npm-from-source-packages)))
+
+(define-public node-agentclientprotocol-sdk
+  (npm-source-package (assoc "@agentclientprotocol/sdk" %npm-from-source-packages)))
+
+(define-public node-ai-gateway-provider
+  (npm-source-package (assoc "ai-gateway-provider" %npm-from-source-packages)))
+
+(define-public node-opentui-spinner
+  (npm-source-package (assoc "opentui-spinner" %npm-from-source-packages)))
+
+(define-public node-hono-standard-validator
+  (npm-source-package (assoc "@hono/standard-validator" %npm-from-source-packages)))
+
+(define-public node-solid-primitives-event-bus
+  (npm-source-package (assoc "@solid-primitives/event-bus" %npm-from-source-packages)))
+
+(define-public node-solid-primitives-scheduled
+  (npm-source-package (assoc "@solid-primitives/scheduled" %npm-from-source-packages)))
+
+(define-public node-solid-primitives-utils
+  (npm-source-package (assoc "@solid-primitives/utils" %npm-from-source-packages)))
+
+(define-public node-standard-community-standard-json
+  (npm-source-package (assoc "@standard-community/standard-json" %npm-from-source-packages)))
+
+(define-public node-standard-community-standard-openapi
+  (npm-source-package (assoc "@standard-community/standard-openapi" %npm-from-source-packages)))
+
+(define-public node-vercel-oidc
+  (npm-source-package (assoc "@vercel/oidc" %npm-from-source-packages)))
+
+(define-public node-bonjour-service
+  (npm-source-package (assoc "bonjour-service" %npm-from-source-packages)))
+
+(define-public node-hono
+  (npm-source-package (assoc "hono" %npm-from-source-packages)))
+
+(define-public node-hono-openapi
+  (npm-source-package (assoc "hono-openapi" %npm-from-source-packages)))
+
+(define-public node-quansync
+  (npm-source-package (assoc "quansync" %npm-from-source-packages)))
+
+(define-public node-zod-to-json-schema
+  (npm-source-package (assoc "zod-to-json-schema" %npm-from-source-packages)))
+
+(define-public node-diff
+  (npm-source-package (assoc "diff" %npm-from-source-packages)))
+
+(define-public node-gaxios
+  (npm-source-package (assoc "gaxios" %npm-from-source-packages)))
+
+(define-public node-gcp-metadata
+  (npm-source-package (assoc "gcp-metadata" %npm-from-source-packages)))
+
+(define-public node-google-logging-utils
+  (npm-source-package (assoc "google-logging-utils" %npm-from-source-packages)))
+
+(define-public node-isexe
+  (npm-source-package (assoc "isexe" %npm-from-source-packages)))
+
+(define-public node-signal-exit
+  (npm-source-package (assoc "signal-exit" %npm-from-source-packages)))
+
+(define-public node-gitlab-gitlab-ai-provider
+  (npm-source-package (assoc "@gitlab/gitlab-ai-provider" %npm-from-source-packages)))
+
+(define-public node-gitlab-opencode-gitlab-auth
+  (npm-source-package (assoc "@gitlab/opencode-gitlab-auth" %npm-from-source-packages)))
+
+(define-public node-pkce-challenge
+  (npm-source-package (assoc "pkce-challenge" %npm-from-source-packages)))
+
+(define-public node-modelcontextprotocol-sdk
+  (npm-source-package (assoc "@modelcontextprotocol/sdk" %npm-from-source-packages)))
+
+(define-public node-openrouter-ai-sdk-provider
+  (npm-source-package (assoc "@openrouter/ai-sdk-provider" %npm-from-source-packages)))
+
+(define-public node-opentui-core
+  (npm-source-package (assoc "@opentui/core" %npm-from-source-packages)))
+
+(define-public node-remeda
+  (npm-source-package (assoc "remeda" %npm-from-source-packages)))
+
+(define-public node-ret
+  (npm-source-package (assoc "ret" %npm-from-source-packages)))
+
+(define-public node-vscode-jsonrpc
+  (npm-source-package (assoc "vscode-jsonrpc" %npm-from-source-packages)))
+
+(define-public node-clack-core
+  (npm-source-package (assoc "@clack/core" %npm-from-source-packages)))
+
+(define-public node-clack-prompts
+  (npm-source-package (assoc "@clack/prompts" %npm-from-source-packages)))
+
+;; Convenience list for opencode's inputs and substitution roots.
+(define %javascript-from-source
+  (list node-agent-base
+        node-https-proxy-agent
+        node-agentclientprotocol-sdk
+        node-ai-gateway-provider
+        node-opentui-spinner
+        node-hono-standard-validator
+        node-solid-primitives-event-bus
+        node-solid-primitives-scheduled
+        node-solid-primitives-utils
+        node-standard-community-standard-json
+        node-standard-community-standard-openapi
+        node-vercel-oidc
+        node-bonjour-service
+        node-hono
+        node-hono-openapi
+        node-quansync
+        node-zod-to-json-schema
+        node-diff
+        node-gaxios
+        node-gcp-metadata
+        node-google-logging-utils
+        node-isexe
+        node-signal-exit
+        node-gitlab-gitlab-ai-provider
+        node-gitlab-opencode-gitlab-auth
+        node-pkce-challenge
+        node-modelcontextprotocol-sdk
+        node-openrouter-ai-sdk-provider
+        node-opentui-core
+        node-remeda
+        node-ret
+        node-vscode-jsonrpc
+        node-clack-core
+        node-clack-prompts))
 
 (define opencode-source
   (local-git-checkout-or-empty %opencode-source-directory
@@ -5101,8 +5356,13 @@ done"))
               (let* ((roots (map (lambda (name)
                                    (string-append (assoc-ref inputs name)
                                                   "/lib"))
-                                 '("vercel-ai" "actions-toolkit" "npm-packages"
-                                   "solid-js")))
+                                 (append '("solid-js")
+                                         '#$(map package-name
+                                                 %vercel-from-source)
+                                         '#$(map package-name
+                                                 %actions-from-source)
+                                         '#$(map package-name
+                                                 %javascript-from-source))))
                      (replaced 0) (skipped 0))
                 (define (swap! directory root name)
                   ;; Bun keeps several versions of a package side by side, so
@@ -5315,10 +5575,11 @@ for (let i = 3; i < process.argv.length; i++) {
        ("tree-sitter-wasm-grammars" ,tree-sitter-wasm-grammars)
        ("parcel-watcher-node" ,parcel-watcher-node)
        ("web-tree-sitter-wasm" ,web-tree-sitter-wasm)
-       ("vercel-ai" ,vercel-ai-from-source)
-       ("actions-toolkit" ,actions-toolkit-from-source)
-       ("npm-packages" ,npm-packages-from-source)
+       ,@(map (lambda (p) (list (package-name p) p)) %vercel-from-source)
+       ,@(map (lambda (p) (list (package-name p) p)) %actions-from-source)
        ("solid-js" ,solid-js-from-source)
+       ,@(map (lambda (p) (list (package-name p) p))
+              %javascript-from-source)
        ("node-modules" ,opencode-node-modules)
        ("models-dev-api" ,models-dev-api-json)
        ("app-node-modules" ,app-node-modules)
