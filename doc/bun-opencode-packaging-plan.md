@@ -2613,3 +2613,69 @@ Verdict, unchanged and re-established on current evidence: no prebuilt binary
 that packaging can reach enters the build.  What remains is LLVM's binary
 test fixtures, which are never compiled or installed, the unstripped
 downloads that stripping itself consumes, and Guix's own bootstrap seeds.
+
+## Where this stands, and the decision that is open
+
+Paused here deliberately.  Everything below is state, not a plan in
+progress.
+
+### What works today
+
+/gnu/store/plb373yssfrq4q9s4czdjx9hlr5prgrv-opencode-1.1.58 builds and runs:
+--version, models, auth list, serve with seven providers, and the TUI renders
+under a pty.  Closure 576.4 MiB.  Five references, of which four are genuine
+-- gcc-14.3.0-lib, glibc twice and icu4c are in RUNPATH with libicui18n,
+libicuuc and libc as NEEDED -- and one, bun-stage0, is a single recorded
+/bin/bun path that could still be removed.
+
+63 dependencies are built from source, each its own Guix package: 34 from the
+npm list, 4 from actions/toolkit, 24 from the vercel/ai monorepo, plus
+solid-js.  Ten native artefacts are compiled rather than downloaded.  No
+prebuilt binary that packaging can reach enters the build; that was
+re-audited against the current artefact, not carried over.
+
+### What does not work for anyone else
+
+Thirteen inputs read from /home/manolis/repos/opencode on this machine: the
+opencode checkout, eleven node_modules trees under a 6.2 GiB
+.guix-node-modules, and a models.dev snapshot from /tmp.  Each falls back to
+an *empty directory* when the path is absent, so elsewhere the package builds
+something quietly wrong instead of failing.  This is the only thing standing
+between the channel and anyone else being able to use it.
+
+### The real size of the job
+
+bun.lock was parsed to settle this rather than estimating from directory
+counts.  It carries 2416 package entries across 18 workspaces, and every one
+is a distinct name at a single version -- no package appears twice at
+different versions.  So the full-packaging route is 2416 packages, not the
+~1814 quoted earlier, which was a count of directories under node_modules/.bun
+and included one copy per dependent.  63 are done, which is 2.6 percent.
+
+### The three routes, and what each actually buys
+
+Fixed-output derivation.  Guix runs bun install --frozen-lockfile against
+bun.lock with network access, pinned by output hash.  Roughly a day.  The
+channel then builds anywhere and the 63 from-source packages still layer on
+top.  It buys reproducibility, not from-source: the pinned blob is published
+npm JavaScript.  Guix proper generally declines packages of this shape, so it
+very likely does not lead to upstreaming.
+
+All 2416 as packages.  The shape Guix proper would accept, and the honest
+reading of "build everything from source".  At the rate this session managed
+-- 63 packages, and the awkward ones took a build cycle each -- this is a
+months-long project rather than a session.  Worth knowing before starting:
+most of those 2416 are small and would follow one generated pattern from the
+lockfile, so the cost is not linear in 2416; but the tail is where the work
+is, as @opentui/core, solid-js and @clack/* each showed.
+
+Leave it.  Everything above keeps working here.  The channel stays personal.
+
+### If the answer turns out to be none of these
+
+The question worth asking first is whether opencode is the right thing to
+package at all.  Nothing in the from-source machinery built here is specific
+to it -- the bun build system, the strip-by-magic-number snippet, the
+per-package builders, the substitution phase and the closure fixes would all
+apply to another agent written on bun or node.  A project with a smaller
+dependency tree would reach a fully packaged state far sooner.
