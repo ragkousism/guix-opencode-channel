@@ -2423,3 +2423,44 @@ What does show it is the substitution count: 1052 files replaced before,
 copies of the package in the tree.
 
 58 packages from source.
+
+## solid-js
+
+The last of the packages set aside as a "multi-step build".  It needed its
+own package rather than an entry in the generic list, because its rollup
+configuration turns fifteen inputs into thirty bundles and what separates
+them is not a build flag but a textual substitution.
+
+rollup-plugin-replace rewrites the *string literal* "_SOLID_DEV_", with
+empty delimiters, inside `export const IS_DEV = "_SOLID_DEV_" as string |
+boolean'.  Left alone that literal is a non-empty string and therefore
+truthy, so a bundle built without the substitution would silently run in
+development mode for ever -- and it would pass the unsubstituted-identifier
+check already in the tree, which looks for the __NAME__ form and not this
+one.  esbuild's --define rewrites identifiers, not literals, so the source is
+copied once per variant and patched in place.  Ours reads `IS_DEV = false'
+and `IS_DEV = true' exactly as upstream's does, and the build fails if the
+literal survives into a patched variant.
+
+Three of the four export conditions rollup builds are left as published.
+web, html and h compile against dom-expressions and lit-dom-expressions;
+opencode drives a terminal through @opentui/solid's universal renderer and
+resolves none of them.  universal does need dom-expressions, fetched at
+0.40.3, the version pinned in solid's monorepo root.
+
+That is also where `rxcore' finally made sense.  It appears in solid's rollup
+config as a rename-import target but nothing in solid imports it -- it is
+dom-expressions that does, and rollup points it at solid's own web/src/core.
+The alias has to resolve into the same variant copy, or a single bundle would
+mix the development flag.
+
+Verified by diffing export sets against the published bundles: 54, 54, 53, 8
+and 1 names for solid, dev, server, store and universal, all identical, and
+the TUI renders unchanged under a pty.  The substitution count went 1117 to
+1917, which is the 16 files of this build times the fifty copies of solid-js
+in the tree.
+
+One self-inflicted mistake worth recording: dom-expressions was first aliased
+straight at its store path, which put a /gnu/store reference back into the
+output -- the very leak the previous section removed.  It is copied into the
+build directory like everything else now.

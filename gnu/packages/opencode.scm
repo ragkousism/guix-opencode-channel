@@ -4215,6 +4215,179 @@ set, replacing the built output published on npm.")
       ;; monorepos: vercel's carries WebAssembly test fixtures.
       (snippet %strip-compiled-artefacts))))
 
+(define %solid-js-version "1.9.10")
+(define %solid-js-commit "bed16cc41eb0bd16531eb0495fa4fac1fa2d6a59")
+
+(define solid-js-source
+  (origin
+    (method git-fetch)
+    (uri (git-reference (url "https://github.com/solidjs/solid")
+                        (commit %solid-js-commit)))
+    (file-name (git-file-name "solid-js" %solid-js-version))
+    (sha256
+     (base32 "0xyki1s9y0mbjw78db5wwj97fb0053qzrzi5qnsh10q8qkggx9xa"))
+    (modules %strip-modules)
+    (snippet %strip-compiled-artefacts)))
+
+;; solid's rollup configuration turns fifteen inputs into thirty bundles, an
+;; ESM and a CommonJS one each.  What separates them beyond the format is a
+;; textual substitution: rollup-plugin-replace rewrites the *string literal*
+;; "_SOLID_DEV_" to true or false, with empty delimiters, and the library
+;; reads it as `export const IS_DEV = "_SOLID_DEV_" as string | boolean'.
+;; Left alone the literal is a non-empty string and therefore truthy, so a
+;; bundle built without the substitution would silently run in development
+;; mode.  esbuild's --define only rewrites identifiers, not literals, so the
+;; source is copied once per variant and patched instead.
+;;
+;; VARIANT is "prod", "dev", or "none" for the bundles rollup builds without
+;; the plugin at all -- the server and renderer entry points, which do not
+;; reach that declaration.
+;; solid's universal renderer re-exports dom-expressions, which rollup
+;; resolves from the monorepo's node_modules -- the root package.json pins
+;; 0.40.3.  Its sources import the specifier "rxcore", which rollup rewrites
+;; with babel-plugin-transform-rename-import to solid's own web/src/core; the
+;; alias has to point into the same variant copy so the development flag
+;; stays consistent across the bundle.
+(define dom-expressions-source
+  (origin
+    (method git-fetch)
+    (uri (git-reference (url "https://github.com/ryansolid/dom-expressions")
+                        (commit "f241fd111f65fcd81f61191056eda59235929536")))
+    (file-name (git-file-name "dom-expressions" "0.40.3"))
+    (sha256
+     (base32 "1m0ncyibnm4cfyd65s5nrjd88cz82imj3xs7lna1mh5ljj9d3vvx"))
+    (modules %strip-modules)
+    (snippet %strip-compiled-artefacts)))
+
+(define %solid-js-bundles
+  ;; (VARIANT INPUT OUTPUT-BASE)
+  '(("prod" "src/index.ts" "dist/solid")
+    ("dev" "src/index.ts" "dist/dev")
+    ("none" "src/server/index.ts" "dist/server")
+    ("prod" "store/src/index.ts" "store/dist/store")
+    ("dev" "store/src/index.ts" "store/dist/dev")
+    ("none" "store/src/server.ts" "store/dist/server")
+    ("prod" "universal/src/index.ts" "universal/dist/universal")
+    ("dev" "universal/src/index.ts" "universal/dist/dev")))
+
+;; The web, html and h entry points are left as published.  They compile
+;; against dom-expressions, which rollup resolves from node_modules and which
+;; would have to be fetched and built as well; opencode drives a terminal
+;; through @opentui/solid's universal renderer and resolves none of them.
+
+(define-public solid-js-from-source
+  (package
+    (name "solid-js-from-source")
+    (version %solid-js-version)
+    (source #f)
+    (build-system trivial-build-system)
+    (arguments
+     (list
+      #:modules '((guix build utils) (ice-9 match) (ice-9 rdelim)
+                  (srfi srfi-1))
+      #:builder
+      #~(begin
+          (use-modules (guix build utils) (ice-9 match) (ice-9 rdelim)
+                       (srfi srfi-1))
+          (setenv "PATH"
+                  (string-append (assoc-ref %build-inputs "esbuild") "/bin:"
+                                 (assoc-ref %build-inputs "coreutils") "/bin"))
+          (let* ((source (string-append (assoc-ref %build-inputs "source")
+                                        "/packages/solid"))
+                 (target (string-append #$output "/lib/solid-js")))
+            ;; One copy per variant, patched in place.  Copying out of the
+            ;; store also keeps store paths out of esbuild's annotations.
+            (for-each
+             (lambda (variant)
+               (let ((directory (string-append (getcwd) "/" variant)))
+                 (copy-recursively source directory)
+                 (invoke "chmod" "-R" "u+w" directory)
+                 (unless (string=? variant "none")
+                   (let ((value (if (string=? variant "dev") "true" "false")))
+                     (substitute* (find-files directory "\\.ts$")
+                       (("\"_SOLID_DEV_\"") value)
+                       (("\"_DX_DEV_\"") value))))))
+             '("none" "prod" "dev"))
+            ;; Copied for the same reason as the variants: esbuild records
+            ;; the path of every module it reads, and a store path here would
+            ;; become a runtime reference of opencode.
+            (copy-recursively (string-append
+                               (assoc-ref %build-inputs "dom-expressions")
+                               "/packages/dom-expressions")
+                              (string-append (getcwd) "/dom-expressions"))
+            (invoke "chmod" "-R" "u+w"
+                    (string-append (getcwd) "/dom-expressions"))
+            (mkdir-p target)
+            (call-with-output-file (string-append target "/VERSION")
+              (lambda (port) (format port "~a~%" #$%solid-js-version)))
+            (for-each
+             (match-lambda
+               ((variant input output-base)
+                (let ((entry (string-append (getcwd) "/" variant "/" input)))
+                  (unless (file-exists? entry)
+                    (error "no such solid entry" input))
+                  (for-each
+                   (match-lambda
+                     ((format . extension)
+                      (let ((output (string-append target "/" output-base
+                                                   extension)))
+                        (mkdir-p (dirname output))
+                        (apply invoke "esbuild" entry "--bundle"
+                               ;; rollup builds these for no particular host;
+                               ;; every dependency below is external there
+                               ;; too, so nothing is left unresolved.
+                               "--platform=neutral"
+                               (string-append "--format=" format)
+                               (string-append "--outfile=" output)
+                               (string-append "--alias:dom-expressions="
+                                              (getcwd) "/dom-expressions")
+                               (string-append
+                                "--alias:rxcore=" (getcwd) "/" variant
+                                "/web/src/core")
+                               (append-map
+                                (lambda (d)
+                                  (list (string-append "--external:" d)))
+                                '("solid-js" "solid-js/web" "solid-js/store"
+                                  "seroval" "seroval-plugins"
+                                  "seroval-plugins/web" "stream"
+                                  "csstype"))))))
+                   '(("cjs" . ".cjs") ("esm" . ".js"))))))
+             '#$%solid-js-bundles)
+            ;; The literal must not survive into a patched variant: that is
+            ;; the whole point of the substitution above.
+            (for-each
+             (match-lambda
+               ((variant input output-base)
+                (unless (string=? variant "none")
+                  (for-each
+                   (lambda (extension)
+                     (let ((file (string-append target "/" output-base
+                                                extension)))
+                       (call-with-input-file file
+                         (lambda (port)
+                           (let loop ()
+                             (let ((line (read-line port)))
+                               (unless (eof-object? line)
+                                 (when (string-contains line "_SOLID_DEV_")
+                                   (error "unsubstituted flag in" file))
+                                 (loop))))))))
+                   '(".cjs" ".js")))))
+             '#$%solid-js-bundles)))))
+    (native-inputs
+     `(("esbuild" ,esbuild)
+       ("coreutils" ,coreutils)))
+    (inputs `(("source" ,solid-js-source)
+              ("dom-expressions" ,dom-expressions-source)))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://www.solidjs.com/")
+    (synopsis "Solid reactive JavaScript library, built from source")
+    (description
+     "This package builds @code{solid-js} from its TypeScript sources,
+reproducing the thirty bundles its rollup configuration produces, including
+the textual substitution of the development flag that separates the
+production, development and server builds.")
+    (license license:expat)))
+
 (define-public npm-packages-from-source
   (package
     (name "npm-packages-from-source")
@@ -4928,7 +5101,8 @@ done"))
               (let* ((roots (map (lambda (name)
                                    (string-append (assoc-ref inputs name)
                                                   "/lib"))
-                                 '("vercel-ai" "actions-toolkit" "npm-packages")))
+                                 '("vercel-ai" "actions-toolkit" "npm-packages"
+                                   "solid-js")))
                      (replaced 0) (skipped 0))
                 (define (swap! directory root name)
                   ;; Bun keeps several versions of a package side by side, so
@@ -5144,6 +5318,7 @@ for (let i = 3; i < process.argv.length; i++) {
        ("vercel-ai" ,vercel-ai-from-source)
        ("actions-toolkit" ,actions-toolkit-from-source)
        ("npm-packages" ,npm-packages-from-source)
+       ("solid-js" ,solid-js-from-source)
        ("node-modules" ,opencode-node-modules)
        ("models-dev-api" ,models-dev-api-json)
        ("app-node-modules" ,app-node-modules)
