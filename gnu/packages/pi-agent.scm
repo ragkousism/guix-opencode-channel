@@ -8,7 +8,12 @@
   #:use-module (guix git-download)
   #:use-module (guix packages)
   #:use-module (guix utils)
-  #:use-module (gnu packages rust))
+  #:use-module (gnu packages compression)
+  #:use-module (gnu packages llvm)
+  #:use-module (gnu packages pi-crates)
+  #:use-module (gnu packages pkg-config)
+  #:use-module (gnu packages rust)
+  #:use-module (gnu packages sqlite))
 
 ;; Guix keeps this private: every Rust is built by the one before it, and the
 ;; helper that expresses that link is not exported.  Reaching for it is the
@@ -84,3 +89,43 @@ ge13ca993e8ccb9ba9847cc330696e02839f328f7/jemalloc"))
                             "vendor/tempfile-3.24.0/Cargo.toml")
                (("features = \\[\"fs\"" all)
                 (string-append all ", \"use-libc\""))))))))))
+
+
+(define-public pi
+  (package
+    (name "pi")
+    (version "0.2.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/Dicklesworthstone/pi_agent_rust")
+             (commit "d65b83a8c1a0402ecd806dfa77e234907d17c8e9")))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "15qs17i288cyfb6d2i83c542bvfcz5s1nwbx4ygrsvv2qsj6y0b3"))
+       (modules '((guix build utils)))
+       ;; The only compiled artefacts in the tree: a WebAssembly build of Doom
+       ;; used by an extension-conformance test and a copy of it kept under
+       ;; the legacy TypeScript sources.  Neither is built from source here
+       ;; and neither is needed to build pi.
+       (snippet
+        '(for-each delete-file
+                   (find-files "." "\\.wasm$")))))
+    (build-system cargo-build-system)
+    (arguments
+     (list
+      #:rust rust-1.95
+      ;; The test suite drives a terminal and reaches the network.
+      #:tests? #f
+      #:install-source? #f))
+    (native-inputs (list clang pkg-config))
+    (inputs
+     (cons* sqlite
+            (cargo-inputs 'pi #:module '(gnu packages pi-crates))))
+    (home-page "https://github.com/Dicklesworthstone/pi_agent_rust")
+    (synopsis "Terminal coding agent written in Rust")
+    (description
+     "Pi is a coding agent for the terminal.  It is model-agnostic, keeps its
+system prompt small, and runs as a single binary.")
+    (license license:expat)))
