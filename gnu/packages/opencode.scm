@@ -69,7 +69,8 @@
             bun-build-system-smoke
             opencode
             bun-from-source-local
-            opencode-local))
+            opencode-local
+            opencode-bin))
 
 ;; Local development defaults.  Override these with environment variables for
 ;; other checkouts/snapshots:
@@ -5679,3 +5680,65 @@ for (let i = 3; i < process.argv.length; i++) {
 
 ;; Backward-compatibility alias.
 (define-public opencode-local opencode)
+
+
+;;; The upstream release binary.  This channel builds opencode from source as
+;;; well -- see the `opencode' package above -- but that route needs a
+;;; node_modules tree this machine happens to have, so it does not build
+;;; anywhere else.  This one does, at the cost of being someone else's build.
+(define-public opencode-bin
+  (package
+    (name "opencode-bin")
+    (version "1.18.18")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (string-append "https://github.com/anomalyco/opencode/releases/"
+                           "download/v" version "/opencode-linux-x64.tar.gz"))
+       (sha256
+        (base32 "1bravfgirc3nmkb86kd21pq8hw6s1h69ia05k5k571cb84ic5p8c"))))
+    (build-system trivial-build-system)
+    (arguments
+     (list
+      #:modules '((guix build utils))
+      #:builder
+      #~(begin
+          (use-modules (guix build utils))
+          (let* ((bin (string-append #$output "/bin"))
+                 (opencode (string-append bin "/opencode")))
+            (setenv "PATH"
+                    (string-join
+                     (map (lambda (input)
+                            (string-append (assoc-ref %build-inputs input)
+                                           "/bin"))
+                          '("tar" "gzip" "patchelf"))
+                     ":"))
+            (mkdir-p bin)
+            ;; The archive holds the single binary, with no directory.
+            (invoke "tar" "-xzf" (assoc-ref %build-inputs "source")
+                    "-C" bin)
+            (chmod opencode #o755)
+            ;; It is linked for a conventional filesystem, so point it at
+            ;; the libc this channel has.  Nothing more: this is a bun
+            ;; single-file executable, which carries its payload appended to
+            ;; the ELF image, and --set-rpath or --remove-needed shifts that
+            ;; payload and segfaults the result.  Setting the interpreter
+            ;; alone leaves it intact, and the store glibc's loader finds
+            ;; libc, libpthread, libdl and libm -- all it needs -- beside
+            ;; itself without a RUNPATH.
+            (invoke "patchelf" "--set-interpreter"
+                    (string-append (assoc-ref %build-inputs "glibc")
+                                   "/lib/ld-linux-x86-64.so.2")
+                    opencode)))))
+    (native-inputs
+     `(("tar" ,tar)
+       ("gzip" ,gzip)
+       ("patchelf" ,patchelf)))
+    (inputs `(("glibc" ,glibc)))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://opencode.ai")
+    (synopsis "Terminal coding agent (upstream binary)")
+    (description
+     "This package installs the @code{opencode} binary published upstream.
+It is not built from source; @code{opencode} in this channel is.")
+    (license license:expat)))

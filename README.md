@@ -1,35 +1,42 @@
-# guix-opencode-channel
+# guix-agents-channel
 
-Experimental channel for packaging Bun and opencode in Guix with a
-source-build bootstrap chain.
+A Guix channel for terminal coding agents and the pieces they need that Guix
+does not carry yet.
 
-## Quick commands
-
-```bash
-guix build -L /home/manolis/repos/guix-opencode-channel bun-stage0 --dry-run
-guix build -L /home/manolis/repos/guix-opencode-channel bun-from-source --dry-run
-guix build -L /home/manolis/repos/guix-opencode-channel opencode --dry-run
-guix build -L /home/manolis/repos/guix-opencode-channel bun-build-system-smoke --dry-run
+```scheme
+(channel
+  (name 'agents)
+  (url "file:///home/manolis/repos/guix-agents-channel"))
 ```
 
-## Main module
+## Packages
 
-- `gnu/packages/opencode.scm`
-- exports: `bun-stage0`, `bun-from-source`, `bun-build-system-smoke`, `opencode`
+| Package | What it is |
+| --- | --- |
+| `pi` | Pi Agent, built from source: all 780 crates, no prebuilt binaries |
+| `opencode` | opencode, built from source as far as packaging can reach |
+| `opencode-bin` | opencode's upstream release binary, unmodified |
+| `rust-1.95` | one link past the rust-1.94 Guix carries; pi needs it |
+| `bun-from-source` | bun, built from source through a bootstrap chain |
+| `emscripten`, `web-tree-sitter-wasm`, `tree-sitter-wasm-grammars` | native artefacts opencode would otherwise download prebuilt |
+| `libopentui`, `librust-pty`, `parcel-watcher-node`, `solid-js-from-source` | the same, for opencode's JavaScript dependencies |
 
-## Bun Build System Modules
+## Which opencode
 
-- `guix/build-system/bun.scm`
-- `guix/build/bun-build-system.scm`
+`opencode` is built from source and `opencode-bin` is not, and the difference
+is not only principle.  Building from source needs a node_modules tree this
+machine happens to have: opencode's dependency closure is 2416 npm packages,
+Guix carries almost none of them, and 63 are packaged here.  So `opencode`
+builds here and nowhere else.  `opencode-bin` builds anywhere, at the cost of
+being someone else's build.
 
-## Local path overrides
+`pi` has no such caveat.  Its closure is 780 crates, Guix already carried 650
+of them, and the remaining 130 are in this channel -- so it builds from source
+on any machine.  That difference is why it is here.
 
-- `BUN_OFFLINE_SEED_DIR` (default `/var/tmp/bun-offline-seed`)
-- `OPENCODE_SOURCE_DIR` (default `/home/manolis/repos/opencode`)
-- `OPENCODE_MODELS_DEV_API_JSON` (default `/tmp/models-dev-api.json`)
+## Notes
 
-## Session log
-
-Detailed status, blockers, and continuation steps are tracked in:
-
-- `doc/bun-opencode-packaging-plan.md`
+`opencode-bin` is patched only to point at this channel's libc.  It is a bun
+single-file executable, which carries its payload appended to the ELF image,
+so `--set-rpath` or `--remove-needed` shifts that payload and segfaults the
+result; setting the interpreter alone leaves it intact.
