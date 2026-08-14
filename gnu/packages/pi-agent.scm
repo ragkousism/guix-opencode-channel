@@ -5,6 +5,7 @@
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix build-system cargo)
   #:use-module (guix download)
+  #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module (guix packages)
   #:use-module (guix utils)
@@ -110,15 +111,41 @@ ge13ca993e8ccb9ba9847cc330696e02839f328f7/jemalloc"))
        ;; the legacy TypeScript sources.  Neither is built from source here
        ;; and neither is needed to build pi.
        (snippet
-        '(for-each delete-file
-                   (find-files "." "\\.wasm$")))))
+        '(begin
+           (for-each delete-file (find-files "." "\\.wasm$"))
+           ;; loom is a dev-dependency pinned to a git revision, reached only
+           ;; by tests behind the non-default loom-tests feature.  Cargo
+           ;; resolves it even for a release build and cannot check out a git
+           ;; source offline, so drop it; nothing built here uses it.
+           (substitute* "Cargo.toml"
+             (("^loom = .*\n") ""))))))
     (build-system cargo-build-system)
     (arguments
      (list
       #:rust rust-1.95
       ;; The test suite drives a terminal and reaches the network.
       #:tests? #f
-      #:install-source? #f))
+      #:install-source? #f
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack-rust-crates 'link-sqlite-dynamically
+            (lambda _
+              ;; sqlmodel-sqlite declares the sqlite3 extern block as
+              ;; kind = "static" and ships no build.rs, expecting
+              ;; libsqlite3-sys's "bundled" feature to compile a vendored
+              ;; amalgamation and leave a PIC libsqlite3.a on the search
+              ;; path.  Guix's libsqlite3.a is not PIC, so it cannot go into
+              ;; the position-independent executable rustc links, and
+              ;; bundling a second copy of SQLite is not what a distribution
+              ;; wants either.
+              ;;
+              ;; Upstream's comment gives two reasons for having moved off a
+              ;; dynamic link: on musl it resolved to nothing, and on glibc
+              ;; hosts it could silently bind whatever libsqlite3-dev was
+              ;; installed.  Neither can happen here, where sqlite is an
+              ;; explicit input and the only one on the search path.
+              (substitute* (find-files "guix-vendor" "^ffi\\.rs$")
+                ((", kind = \"static\"") "")))))))
     (native-inputs (list clang pkg-config))
     (inputs
      (cons* sqlite
