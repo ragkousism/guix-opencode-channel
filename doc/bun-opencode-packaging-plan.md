@@ -2588,3 +2588,28 @@ count is unchanged at 1917 with 41 copies skipped.
 The five that remain are bun-stage0, gcc-14.3.0-lib, glibc twice and icu4c.
 All but bun-stage0 are genuine: they are in RUNPATH with libicui18n, libicuuc
 and libc as NEEDED.
+
+## Re-audit of the current artefact
+
+The closure changed substantially after the earlier audit -- 62 packages
+split out, bun rebuilt, grammars recompiled -- so it was audited again from
+scratch rather than assumed to still hold.
+
+The build closure is 3135 entries: 749 fixed-output inputs and 158 derived
+source trees.  Scanning everything the build actually consumes, by magic
+number, finds six compiled artefacts, and all six are ones this channel
+compiled: libopentui.so from opentui's Zig sources, and the five tree-sitter
+grammars built by tree-sitter-wasm-grammars and emitted as assets by
+@opentui/core's bun build.
+
+Three inputs are new since the last audit.  dom-expressions and solid-js
+carry nothing compiled.  @opentui/core's checkout exists in the store twice:
+the raw download still holds the five prebuilt grammars upstream vendors, and
+the snippet-applied copy holds none.  Following the derivation graph shows
+node-opentui-core takes the stripped one, which is the whole point of the
+snippet -- the unstripped download exists only as its input.
+
+Verdict, unchanged and re-established on current evidence: no prebuilt binary
+that packaging can reach enters the build.  What remains is LLVM's binary
+test fixtures, which are never compiled or installed, the unstripped
+downloads that stripping itself consumes, and Guix's own bootstrap seeds.
