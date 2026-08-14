@@ -2520,3 +2520,25 @@ runs it.  `#$directory' inside that string is not interpolated -- gexps do
 not substitute into string literals -- so the script received the characters
 verbatim and reported "no packages were built".  The directory is passed
 through the environment instead.
+
+## The grammar checkouts leave the reference set
+
+Two of the eight remaining references were the bash and markdown grammar
+checkouts, held there by a single string each: clang records the path of
+every translation unit in the module it emits, and the grammars were being
+compiled straight out of the store.  Compiling from a copy removes it; all
+six grammars now scan clean.
+
+The first attempt copied only the source subdirectory and broke twice.
+grammar-markdown serves two grammars, markdown and markdown_inline, so the
+destination collided; and typescript's scanner.c includes
+../../common/scanner.h, a header outside its own subdirectory.  The whole
+checkout is copied once per input instead.
+
+References are down from eight to six and the closure from 853.7 to 838.3
+MiB.  The substitution count is unchanged at 1917, which is the point: this
+changed how the grammars are compiled, not what opencode ends up running.
+
+What remains is gcc, glibc, icu4c and bun-stage0, all of them strings inside
+the bun runtime that opencode embeds rather than anything opencode does.
+glibc and icu4c are genuine runtime dependencies in any case.

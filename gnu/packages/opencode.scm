@@ -1117,8 +1117,20 @@ that package ships.")
             (for-each
              (match-lambda
                ((output input subdirectory symbol)
-                (let* ((directory (string-append (assoc-ref %build-inputs input)
-                                                 "/" subdirectory))
+                (let* ((directory
+                        (let ((from (assoc-ref %build-inputs input))
+                              (to (string-append (getcwd) "/src-" input)))
+                          ;; clang records each translation unit's path in the
+                          ;; module it emits, so compiling straight out of the
+                          ;; store makes this checkout a runtime reference of
+                          ;; everything that embeds the grammar.  The whole
+                          ;; checkout is copied, not just the subdirectory:
+                          ;; typescript's scanner.c includes a header from
+                          ;; ../../common.  One checkout can also serve two
+                          ;; grammars, as markdown does, so copy it once.
+                          (unless (file-exists? to)
+                            (copy-recursively from to))
+                          (string-append to "/" subdirectory)))
                        (sources (find-files directory "\\.c$"))
                        (objects
                         (map (lambda (source)
