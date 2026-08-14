@@ -2375,3 +2375,51 @@ toolchain paths.  glibc and icu4c are genuine runtime dependencies anyway.
 The two tree-sitter grammar checkouts remain via scanner.c paths in the wasm
 debug info.  Fixing those means changing the bun and grammar builds, not
 opencode's.
+
+## @opentui/core
+
+Previously set aside as needing yoga-layout and jimp inlined.  That was
+half right.  The published bundle does inline jimp, yoga-layout, marked,
+diff and bun-ffi-structs -- it imports nothing but node builtins -- but all
+five are ordinary dependencies rather than devDependencies, and each is
+installed in opencode's tree exactly once, so they can stay external and be
+resolved there.  The clack problem does not arise.
+
+The actual obstacle was different: esbuild cannot build this package at all.
+opentui loads its grammars with `import x from "./....wasm" with { type:
+"file" }`, and esbuild answers `Importing with a type attribute of "file" is
+not supported`.  So the builder gained a bun bundling mode, which is what
+upstream builds this package with.  A mode part spelled `bun:<dir>:<entry>`
+runs bun instead of esbuild and translates the externals to bun's spelling.
+
+The origin snippet strips the prebuilt grammars the repository vendors, so
+the ones built by tree-sitter-wasm-grammars are copied into
+src/lib/tree-sitter/assets/<language>/ first -- beside the module that loads
+them, not at the top of src/, which is where the relative import points.
+bun emits them as content-hashed assets next to the output.
+
+Only two of the four entry points are built.  ./3d and ./testing import
+three and planck, neither declared anywhere in opentui's manifest, and
+opencode uses neither, so they stay as published.  parser.worker.ts imports
+web-tree-sitter, a devDependency, but that one is hoisted into opencode's
+tree and resolves as an external.
+
+### Verifying it, and two checks that proved nothing
+
+The TUI was finally driven rather than argued about: run under a pty it
+renders the banner, the prompt, the model selector and the status bar, which
+exercises yoga layout and the box drawing.
+
+Two attempts at byte-level evidence failed and are recorded so they are not
+repeated.  Searching the binary for bun's content-hashed asset names does
+not discriminate, because the grammar bytes are identical either way -- they
+come from tree-sitter-wasm-grammars in both cases -- so bun derives the same
+hash.  Searching for bun's `// build/@opentui/core/src/...` module comments
+also fails, because opencode's own `bun build --compile` re-minifies and
+strips them.
+
+What does show it is the substitution count: 1052 files replaced before,
+1117 after, and 1117 - 1052 = 65 = the 13 files of this build times the five
+copies of the package in the tree.
+
+58 packages from source.

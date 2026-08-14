@@ -4061,6 +4061,27 @@ set, replacing the built output published on npm.")
      "cjs:dist/index.js,esm:dist/index.mjs"
      "+@ai-sdk/provider +@ai-sdk/provider-utils eventsource-parser \
 @standard-schema/spec zod")
+    ;; @opentui/core publishes only built output, with jimp, yoga-layout,
+    ;; marked, diff and bun-ffi-structs inlined even though all five are
+    ;; ordinary dependencies.  They are installed in opencode's tree at one
+    ;; version each, so they can stay external and be resolved there.
+    ;;
+    ;; Only two of the four entry points are built.  src/index.ts never
+    ;; reaches src/3d, so ./3d and ./testing -- which import three and
+    ;; planck, neither of them declared anywhere in the manifest -- are left
+    ;; as published; opencode does not use them.  parser.worker.ts imports
+    ;; web-tree-sitter, a devDependency, but that one is hoisted into
+    ;; opencode's tree, so marking it external resolves.
+    ;;
+    ;; The shared library beside this is built by libopentui, and the
+    ;; tree-sitter grammars by tree-sitter-wasm-grammars.
+    ("@opentui/core" "anomalyco/opentui" "packages/core" "0.1.77"
+     "85e0582f95c22a792b320f6f8123dd1e433e2813"
+     "1nfphzaq35qpd6n5hq30xjh6ywmyqas7nya34k8lzxakfd6vhk5n"
+     "bun:.:src/index.ts,bun:.:src/lib/tree-sitter/parser.worker.ts"
+     ;; bun:ffi is a runtime builtin; esbuild has no notion of it, and the
+     ;; published bundle imports it too.
+     "web-tree-sitter bun:ffi bun")
     ;; remeda's dist has one file per exported function, which looked like a
     ;; blocker, but its exports map has a single "." entry pointing at
     ;; dist/index.js and dist/index.cjs.  The per-function files exist for
@@ -4211,7 +4232,8 @@ set, replacing the built output published on npm.")
                        (ice-9 rdelim) (ice-9 regex)
                        (srfi srfi-1) (srfi srfi-13))
           (setenv "PATH"
-                  (string-append (assoc-ref %build-inputs "esbuild") "/bin:"
+                  (string-append (assoc-ref %build-inputs "bun") "/bin:"
+                                 (assoc-ref %build-inputs "esbuild") "/bin:"
                                  (assoc-ref %build-inputs "node") "/bin:"
                                  (assoc-ref %build-inputs "coreutils") "/bin"))
           ;; Copied out of the store for the same reason as the package
@@ -4306,6 +4328,24 @@ set, replacing the built output published on npm.")
                                        (string-append "--external:" d "/*")))
                                (string-split (string-trim-both line)
                                              #\space)))))))
+                ;; opentui imports the tree-sitter grammars as file assets
+                ;; beside the module that loads them.  The origin snippet
+                ;; drops the prebuilt copies the repository vendors, so put
+                ;; the ones built from source where that import looks.
+                (when (string=? name "@opentui/core")
+                  (for-each
+                   (lambda (language)
+                     (let ((to (string-append package-directory
+                                              "/src/lib/tree-sitter/assets/"
+                                              language)))
+                       (mkdir-p to)
+                       (copy-file
+                        (string-append (assoc-ref %build-inputs
+                                                  "tree-sitter-grammars")
+                                       "/lib/tree-sitter-" language ".wasm")
+                        (string-append to "/tree-sitter-" language ".wasm"))))
+                   '("javascript" "typescript" "markdown" "markdown_inline"
+                     "zig")))
                 (mkdir-p target)
                 (call-with-output-file (string-append target "/VERSION")
                   (lambda (port) (format port "~a~%" version)))
@@ -4315,6 +4355,36 @@ set, replacing the built output published on npm.")
                 ;; mix them: several ship CommonJS and ESM in sibling trees.
                 (for-each
                  (lambda (part)
+                   (if (string-prefix? "bun:" part)
+                       ;; esbuild rejects `with { type: "file" }' outright and
+                       ;; opentui imports its grammars that way, so this
+                       ;; package is bundled by bun, which is what upstream
+                       ;; builds it with.  Emitted assets land beside the
+                       ;; output and are installed along with it.
+                       (let* ((fields (string-split part #\:))
+                              (outdir (string-append target "/"
+                                                     (cadr fields)))
+                              (source-entry (string-append package-directory
+                                                           "/"
+                                                           (caddr fields))))
+                         (unless (file-exists? source-entry)
+                           (error "no entry for" name))
+                         (mkdir-p outdir)
+                         (apply invoke "bun" "build" source-entry
+                                "--target=bun" "--format=esm"
+                                (string-append "--outdir=" outdir)
+                                ;; bun spells an external as a separate
+                                ;; argument rather than esbuild's colon form,
+                                ;; and has no use for the "name/*" variants.
+                                (append-map
+                                 (lambda (flag)
+                                   (if (and (string-prefix? "--external:"
+                                                            flag)
+                                            (not (string-suffix? "/*" flag)))
+                                       (list "--external"
+                                             (string-drop flag 11))
+                                       '()))
+                                 (append externals alias-flags))))
                    (if (string-prefix? "transpile:" part)
                        (let* ((rest (string-drop part 10))
                               (colon (string-index rest #\:))
@@ -4359,11 +4429,18 @@ set, replacing the built output published on npm.")
                                                              format)
                                               (string-append "--outdir="
                                                              outdir)))))
-                       (let* ((colon (string-index part #\:))
-                              (format (substring part 0 colon))
-                              (output (string-append
-                                       target "/"
-                                       (substring part (+ 1 colon)))))
+                       (let* ((fields (string-split part #\:))
+                              (format (car fields))
+                              (output (string-append target "/"
+                                                     (cadr fields)))
+                              ;; An optional third field names the entry
+                              ;; point, for packages that publish more than
+                              ;; one.  Without it the default src/index.ts
+                              ;; applies.
+                              (entry (if (null? (cddr fields))
+                                         entry
+                                         (string-append package-directory "/"
+                                                        (caddr fields)))))
                          (unless (file-exists? entry)
                            (error "no entry for" name))
                          (mkdir-p (dirname output))
@@ -4374,7 +4451,7 @@ set, replacing the built output published on npm.")
                                  "\"")
                                 (string-append "--format=" format)
                                 (string-append "--outfile=" output)
-                                (append externals alias-flags)))))
+                                (append externals alias-flags))))))
                  (string-split mode #\,)))))
            '#$%npm-from-source-packages)
           ;; An identifier the upstream bundler would have substituted must
@@ -4411,6 +4488,8 @@ set, replacing the built output published on npm.")
        ("esbuild" ,esbuild)
        ("node" ,node)
        ("vercel-ai" ,vercel-ai-from-source)
+       ("bun" ,bun-from-source)
+       ("tree-sitter-grammars" ,tree-sitter-wasm-grammars)
        ,@(map (lambda (entry)
                 (list (string-append "alias-" (car entry))
                       (npm-alias-source entry)))
