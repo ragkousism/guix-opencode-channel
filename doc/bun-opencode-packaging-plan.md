@@ -2542,3 +2542,49 @@ changed how the grammars are compiled, not what opencode ends up running.
 What remains is gcc, glibc, icu4c and bun-stage0, all of them strings inside
 the bun runtime that opencode embeds rather than anything opencode does.
 glibc and icu4c are genuine runtime dependencies in any case.
+
+## gcc leaves the closure: 838.3 MiB to 576.4 MiB
+
+gcc was 336 MiB total, 261.7 MiB of it its own, nearly a third of opencode's
+closure -- held there by eight strings.  libstdc++'s assertion macros bake
+__FILE__ into the message, so the path of every standard header an assertion
+can fire in (optional, span, bits/stl_tree.h and five more) is a literal in
+bun's binary, and Guix scans output for store hashes.
+
+Three attempts failed before one worked, and each failure is worth keeping.
+
+-ffile-prefix-map=/gnu/store=/store, appended to bun's CompilerFlags.cmake,
+**built cleanly and changed nothing**: afterwards the binary still held eight
+unmapped paths and zero mapped ones.  The flag never reached whichever
+translation units carry them.  This one is the reason to measure rather than
+assume -- nothing about the build said it had not worked.
+
+A regexp scan over the binary found zero matches and stopped on its own
+guard.  Guile's make-regexp goes through POSIX regex, which works on
+NUL-terminated C strings: on a 100 MiB binary it stops at the first NUL byte.
+Guile's own string procedures carry a length and search the whole file, so
+the scan uses string-contains and explicit position tests instead.
+
+The third attempt was an editing mistake that left the module unbalanced, so
+it would not load at all.  Paren balance and `guix build --dry-run` are now
+checked before spending a build.
+
+What works is a post-install rewrite: blank the 32 hash characters in place,
+same length, so nothing in the file moves.  Only paths under a gcc include
+directory match, which leaves the RUNPATH -- icu4c and glibc, the only
+references bun genuinely needs -- untouched.  The strings still read
+/gnu/store/eeee...-gcc-14.3.0/include/c++/optional, so an assertion still
+names the right header; it simply no longer carries a hash for the scanner.
+The phase errors out if it matches nothing or if the file changes size.
+
+Turning off bun's ENABLE_ASSERTIONS would have deleted the strings at the
+source.  That was not done: it removes real runtime checks, which is too much
+to trade for closure size.
+
+Verified: blanked 8, gcc absent from bun's references and from opencode's,
+closure 576.4 MiB, bun runs, opencode runs, TUI renders, and the substitution
+count is unchanged at 1917 with 41 copies skipped.
+
+The five that remain are bun-stage0, gcc-14.3.0-lib, glibc twice and icu4c.
+All but bun-stage0 are genuine: they are in RUNPATH with libicui18n, libicuuc
+and libc as NEEDED.

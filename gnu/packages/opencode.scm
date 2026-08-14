@@ -2847,7 +2847,8 @@ newer Bun releases.")
       #:modules '((guix build gnu-build-system)
                   (guix build utils)
                   (guix build bun-build-system)
-                  (ice-9 textual-ports))
+                  (ice-9 textual-ports)
+                  (srfi srfi-13))
       #:imported-modules `(,@%default-gnu-imported-modules
                            (json)
                            (json builder)
@@ -3631,7 +3632,72 @@ if (typeof Bun.stringWidth === \"undefined\")
                 (invoke "patchelf" "--set-rpath"
                         (string-append (assoc-ref inputs "icu4c") "/lib:"
                                        (assoc-ref inputs "glibc") "/lib")
-                        bun)))))))
+                        bun))))
+          ;; libstdc++'s assertion macros bake __FILE__ into the message, so
+          ;; the path of every standard header an assertion can fire in ends
+          ;; up as a string literal.  Guix scans output for store hashes, so
+          ;; those eight strings alone made the whole gcc package -- 336 MiB,
+          ;; nearly a third of opencode's closure -- a runtime reference.
+          ;; -ffile-prefix-map was tried first and does not reach them.
+          ;;
+          ;; They are only ever printed inside an assertion message, so blank
+          ;; the hash where it stands.  The replacement is the same length,
+          ;; so nothing in the file moves, and only paths under a gcc include
+          ;; directory match: the RUNPATH set just above, which is the only
+          ;; reference bun genuinely needs, is left as it was.
+          ;;
+          ;; The scan uses string operations rather than a regexp because
+          ;; Guile's make-regexp goes through POSIX regex, which is
+          ;; NUL-terminated: on a binary it stops at the first NUL byte and
+          ;; finds nothing.  Guile strings carry their own length.
+          (add-after 'install 'blank-compiler-header-references
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let* ((bun (string-append (assoc-ref outputs "out")
+                                         "/bin/bun"))
+                     (text (call-with-input-file bun
+                             (lambda (port)
+                               (set-port-encoding! port "ISO-8859-1")
+                               (get-string-all port))))
+                     (size (string-length text)))
+                (define (at? position literal)
+                  (let ((end (+ position (string-length literal))))
+                    (and (<= end size)
+                         (string=? (substring text position end) literal))))
+                (define (compiler-include? position)
+                  ;; "/gnu/store/", 32 hash characters, then a gcc directory
+                  ;; whose path continues into include/.
+                  (and (at? (+ position 43) "-gcc-")
+                       (let scan ((k (+ position 43)))
+                         (cond ((> k (+ position 90)) #f)
+                               ((at? k "/include/") #t)
+                               (else (scan (+ k 1)))))))
+                (define (finish kept pieces found)
+                  (let ((clean (string-concatenate
+                                (reverse (cons (substring text kept size)
+                                               pieces)))))
+                    (when (zero? found)
+                      (error "no compiler header references in" bun))
+                    (unless (= (string-length clean) size)
+                      (error "rewrite changed the size of" bun))
+                    (chmod bun #o755)
+                    (call-with-output-file bun
+                      (lambda (port)
+                        (set-port-encoding! port "ISO-8859-1")
+                        (put-string port clean)))
+                    (chmod bun #o555)
+                    (format #t "blanked ~a compiler header reference(s)~%"
+                            found)))
+                (let loop ((from 0) (kept 0) (pieces '()) (found 0))
+                  (let ((position (string-contains text "/gnu/store/" from)))
+                    (cond
+                     ((not position) (finish kept pieces found))
+                     ((compiler-include? position)
+                      (loop (+ position 43) (+ position 43)
+                            (cons (make-string 32 #\e)
+                                  (cons (substring text kept (+ position 11))
+                                        pieces))
+                            (+ found 1)))
+                     (else (loop (+ position 11) kept pieces found)))))))))))
     (inputs
      (list glibc icu4c))
     (native-inputs
