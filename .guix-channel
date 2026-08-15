@@ -1,2 +1,6 @@
 (channel
-  (version 0))
+  (version 0)
+  ;; Announcements shown by `guix pull --news'.  Deliberately not named
+  ;; .scm: anything with that extension is compiled as a module when the
+  ;; channel is pulled, and this is not one.
+  (news-file "etc/news.txt"))

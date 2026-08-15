@@ -1,0 +1,24 @@
+(channel-news
+  (version 0)
+
+  (entry (commit "c704ec1e61a8da41be9004b3ebe7394afee66388")
+         (title (en "Channel renamed to guix-llm"))
+         (body (en "The channel is no longer only about coding agents: it is
+where programs built on large language models go, together with the toolchain
+and native artefacts they need and Guix does not carry.  The channel symbol is
+now @code{llm}.")))
+
+  (entry (commit "e75adbc8cb4655bed585a595d92da47b793f512d")
+         (title (en "Pi Agent, and rust-1.95"))
+         (body (en "@code{pi} is a terminal coding agent written in Rust.
+Every one of its 780 crates is built from source, with the prebuilt binaries
+several of them vendor removed, on a @code{rust-1.95} built through Guix's own
+bootstrap chain -- one link past the @code{rust-1.94} Guix carries, from a
+source tarball with the bundled LLVM, curl, jemalloc, openssl, zlib, libffi,
+mimalloc and nghttp2 removed.  It needs nothing outside the channel, so it
+builds anywhere.
+
+@code{opencode} is also here, built from source as far as packaging can reach,
+but it needs a node_modules tree that only its author's machine has: 2416 npm
+packages, of which Guix carries almost none and 63 are packaged here.
+@code{opencode-bin} is the upstream release binary and builds anywhere.")))) 
