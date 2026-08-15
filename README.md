@@ -1,12 +1,12 @@
-# guix-agents-channel
+# guix-llm
 
-A Guix channel for terminal coding agents and the pieces they need that Guix
-does not carry yet.
+A Guix channel for programs built on large language models -- coding agents
+for now, and the pieces they need that Guix does not carry yet.
 
 ```scheme
 (channel
-  (name 'agents)
-  (url "file:///home/manolis/repos/guix-agents-channel"))
+  (name 'llm)
+  (url "file:///home/manolis/repos/guix-llm"))
 ```
 
 ## Packages

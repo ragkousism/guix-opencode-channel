@@ -119,8 +119,8 @@ the refresh variant — check whether stage0 can keep that one stubbed.
 Smoke test after each stage:
 
 ```bash
-guix build -c16 -L /home/manolis/repos/guix-opencode-channel bun-stage0
-guix shell -L /home/manolis/repos/guix-opencode-channel bun-stage0 -- bun run <(echo 'console.log("hello")')
+guix build -c16 -L /home/manolis/repos/guix-llm bun-stage0
+guix shell -L /home/manolis/repos/guix-llm bun-stage0 -- bun run <(echo 'console.log("hello")')
 ```
 
 Expect instant "hello" output, not a hang. If it still hangs, check
@@ -337,7 +337,7 @@ not implicated in plain-script execution.
 
 ## Scope
 - Target system: `x86_64-linux`
-- Working repo: `/home/manolis/repos/guix-opencode-channel`
+- Working repo: `/home/manolis/repos/guix-llm`
 - Main file under active development: `gnu/packages/opencode.scm`
 
 ## Current package chain (channel)
@@ -353,7 +353,7 @@ not implicated in plain-script execution.
 
 | ID | Milestone | Status | Notes |
 |---|---|---|---|
-| M1 | Channel skeleton + remote repo | DONE | `ragkousism/guix-opencode-channel` |
+| M1 | Channel skeleton + remote repo | DONE | `ragkousism/guix-llm` |
 | M2 | Move prototype packages to channel module | DONE | `gnu/packages/opencode.scm` |
 | M3 | Replace Bun prebuilt bootstrap executable | DONE | `bun-stage0` introduced |
 | M4 | Make `bun-stage0` compile on current WebKit headers | DONE | Compatibility patch set merged in package recipe |
@@ -443,13 +443,13 @@ Key additions in this round:
 Build command used repeatedly:
 
 ```bash
-guix build -L /home/manolis/repos/guix-opencode-channel bun-stage0
+guix build -L /home/manolis/repos/guix-llm bun-stage0
 ```
 
 For low-noise triage:
 
 ```bash
-guix build -L /home/manolis/repos/guix-opencode-channel bun-stage0 \
+guix build -L /home/manolis/repos/guix-llm bun-stage0 \
   2>&1 | rg --line-buffered -n "error:|fatal error|build of .* failed|failed with exit code|^make:"
 ```
 
@@ -637,13 +637,13 @@ sudo find /tmp -maxdepth 1 -name 'guix-build-bun-stage0-*' -print0 \
 1. Re-run detached `opencode` build without `--keep-failed` for a clean archival log of the updated schema path:
 
 ```bash
-setsid bash -lc 'cd /home/manolis/repos/guix-opencode-channel && guix build -c16 -L . opencode > /tmp/opencode-setsid.log 2>&1; echo $? > /tmp/opencode-exit-code' </dev/null &
+setsid bash -lc 'cd /home/manolis/repos/guix-llm && guix build -c16 -L . opencode > /tmp/opencode-setsid.log 2>&1; echo $? > /tmp/opencode-exit-code' </dev/null &
 ```
 
 2. Keep smoke-testing package output:
 
 ```bash
-guix shell -L /home/manolis/repos/guix-opencode-channel opencode -- opencode --help
+guix shell -L /home/manolis/repos/guix-llm opencode -- opencode --help
 ```
 
 3. Advance `bun-build-system` Phase 2:
